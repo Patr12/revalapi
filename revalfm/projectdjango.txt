@@ -1,0 +1,2778 @@
+
+### **1. `models.py` - Advertisement Model**
+```python
+from django.db import models
+from django.utils import timezone
+
+class Advertisement(models.Model):
+    PROGRAM_CHOICES = [
+        ('Morning Show', 'Morning Show'),
+        ('Mid-Morning Mix', 'Mid-Morning Mix'),
+        ('Habari za Mchana', 'Habari za Mchana'),
+        ('Afternoon Gospel', 'Afternoon Gospel'),
+        ('Drive Time', 'Drive Time'),
+        ('Evening Gospel', 'Evening Gospel'),
+        ('Late Night Mix', 'Late Night Mix'),
+        ('General', 'General (All Programs)'),
+    ]
+    
+    STATUS_CHOICES = [
+        ('active', 'Active'),
+        ('inactive', 'Inactive'),
+        ('scheduled', 'Scheduled'),
+    ]
+    
+    title = models.CharField(max_length=200)
+    description = models.TextField()
+    image_url = models.URLField(max_length=500, help_text="URL ya picha ya tangazo")
+    
+    # Program targeting
+    target_program = models.CharField(
+        max_length=50, 
+        choices=PROGRAM_CHOICES,
+        default='General',
+        help_text="Kipindi ambacho tangazo linaonyeshwa"
+    )
+    
+    # Scheduling
+    start_date = models.DateTimeField(default=timezone.now)
+    end_date = models.DateTimeField()
+    display_duration = models.IntegerField(
+        default=30,
+        help_text="Muda wa kuonyesha tangazo (sekunde)"
+    )
+    
+    # Advertiser info
+    advertiser = models.CharField(max_length=200)
+    advertiser_contact = models.CharField(max_length=100, blank=True, null=True)
+    advertiser_email = models.EmailField(blank=True, null=True)
+    
+    # Call to action
+    call_to_action = models.CharField(max_length=100, blank=True, null=True)
+    external_link = models.URLField(max_length=500, blank=True, null=True)
+    
+    # Status & tracking
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default='active'
+    )
+    impressions = models.IntegerField(default=0, help_text="Idadi ya kuonyeshwa")
+    clicks = models.IntegerField(default=0, help_text="Idadi ya kubofya")
+    
+    # Metadata
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    def __str__(self):
+        return f"{self.title} - {self.advertiser}"
+    
+    @property
+    def is_active(self):
+        """Check if ad is currently active"""
+        now = timezone.now()
+        return (
+            self.status == 'active' and
+            self.start_date <= now <= self.end_date
+        )
+    
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = "Advertisement"
+        verbose_name_plural = "Advertisements"
+```
+
+### **2. `serializers.py` - Serializer ya Matangazo**
+```python
+from rest_framework import serializers
+from .models import Advertisement
+from django.utils import timezone
+
+class AdvertisementSerializer(serializers.ModelSerializer):
+    is_active = serializers.BooleanField(read_only=True)
+    
+    class Meta:
+        model = Advertisement
+        fields = [
+            'id',
+            'title',
+            'description',
+            'image_url',
+            'target_program',
+            'start_date',
+            'end_date',
+            'display_duration',
+            'advertiser',
+            'advertiser_contact',
+            'advertiser_email',
+            'call_to_action',
+            'external_link',
+            'status',
+            'impressions',
+            'clicks',
+            'is_active',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = ['impressions', 'clicks', 'created_at', 'updated_at']
+    
+    def validate(self, data):
+        """Validate date ranges"""
+        if data['start_date'] > data['end_date']:
+            raise serializers.ValidationError(
+                "End date must be after start date"
+            )
+        return data
+```
+
+### **3. `views.py` - API Views**
+```python
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from django.utils import timezone
+from .models import Advertisement
+from .serializers import AdvertisementSerializer
+from django.db.models import Q
+import logging
+
+logger = logging.getLogger(__name__)
+
+class ActiveAdvertisementsAPIView(APIView):
+    """API ya kupata matangazo yanayofanya kazi kwa wakati huo"""
+    
+    def get(self, request):
+        try:
+            # Get current time
+            now = timezone.now()
+            
+            # Filter active ads
+            active_ads = Advertisement.objects.filter(
+                status='active',
+                start_date__lte=now,
+                end_date__gte=now
+            ).order_by('?')  # Random order for rotation
+            
+            # Increment impressions for each ad
+            for ad in active_ads:
+                ad.impressions += 1
+                ad.save(update_fields=['impressions'])
+            
+            serializer = AdvertisementSerializer(active_ads, many=True)
+            
+            return Response({
+                'success': True,
+                'count': active_ads.count(),
+                'ads': serializer.data,
+                'timestamp': now.isoformat(),
+            })
+            
+        except Exception as e:
+            logger.error(f"Error fetching ads: {str(e)}")
+            return Response({
+                'success': False,
+                'error': str(e),
+                'ads': []
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class ProgramAdvertisementsAPIView(APIView):
+    """API ya kupata matangazo kwa kipindi maalum"""
+    
+    def get(self, request, program_name):
+        try:
+            now = timezone.now()
+            
+            # Get ads for specific program OR general ads
+            program_ads = Advertisement.objects.filter(
+                Q(target_program=program_name) | Q(target_program='General'),
+                status='active',
+                start_date__lte=now,
+                end_date__gte=now
+            ).order_by('?')
+            
+            # Increment impressions
+            for ad in program_ads:
+                ad.impressions += 1
+                ad.save(update_fields=['impressions'])
+            
+            serializer = AdvertisementSerializer(program_ads, many=True)
+            
+            return Response({
+                'success': True,
+                'program': program_name,
+                'count': program_ads.count(),
+                'ads': serializer.data,
+                'timestamp': now.isoformat(),
+            })
+            
+        except Exception as e:
+            logger.error(f"Error fetching program ads: {str(e)}")
+            return Response({
+                'success': False,
+                'error': str(e),
+                'ads': []
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class TrackClickAPIView(APIView):
+    """API ya kufuatilia clicks za matangazo"""
+    
+    def post(self, request, ad_id):
+        try:
+            ad = Advertisement.objects.get(id=ad_id)
+            ad.clicks += 1
+            ad.save(update_fields=['clicks'])
+            
+            return Response({
+                'success': True,
+                'message': 'Click tracked successfully',
+                'ad_id': ad_id,
+                'new_click_count': ad.clicks
+            })
+            
+        except Advertisement.DoesNotExist:
+            return Response({
+                'success': False,
+                'error': 'Advertisement not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            logger.error(f"Error tracking click: {str(e)}")
+            return Response({
+                'success': False,
+                'error': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class AdvertisementStatisticsAPIView(APIView):
+    """API ya takwimu za matangazo"""
+    
+    def get(self, request):
+        try:
+            total_ads = Advertisement.objects.count()
+            active_ads = Advertisement.objects.filter(
+                status='active',
+                start_date__lte=timezone.now(),
+                end_date__gte=timezone.now()
+            ).count()
+            
+            total_impressions = Advertisement.objects.aggregate(
+                total=models.Sum('impressions')
+            )['total'] or 0
+            
+            total_clicks = Advertisement.objects.aggregate(
+                total=models.Sum('clicks')
+            )['total'] or 0
+            
+            # Click-through rate
+            ctr = (total_clicks / total_impressions * 100) if total_impressions > 0 else 0
+            
+            return Response({
+                'success': True,
+                'statistics': {
+                    'total_ads': total_ads,
+                    'active_ads': active_ads,
+                    'total_impressions': total_impressions,
+                    'total_clicks': total_clicks,
+                    'click_through_rate': round(ctr, 2),
+                }
+            })
+            
+        except Exception as e:
+            logger.error(f"Error fetching statistics: {str(e)}")
+            return Response({
+                'success': False,
+                'error': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+```
+
+### **4. `urls.py` - API Routes**
+```python
+from django.urls import path
+from .views import (
+    ActiveAdvertisementsAPIView,
+    ProgramAdvertisementsAPIView,
+    TrackClickAPIView,
+    AdvertisementStatisticsAPIView,
+)
+
+urlpatterns = [
+    path('ads/active/', ActiveAdvertisementsAPIView.as_view(), name='active_ads'),
+    path('ads/program/<str:program_name>/', ProgramAdvertisementsAPIView.as_view(), name='program_ads'),
+    path('ads/track-click/<int:ad_id>/', TrackClickAPIView.as_view(), name='track_click'),
+    path('ads/statistics/', AdvertisementStatisticsAPIView.as_view(), name='ad_statistics'),
+]
+```
+
+### **5. `admin.py` - Admin Panel Setup**
+```python
+from django.contrib import admin
+from .models import Advertisement
+
+@admin.register(Advertisement)
+class AdvertisementAdmin(admin.ModelAdmin):
+    list_display = ('title', 'advertiser', 'target_program', 'status', 'is_active', 'impressions', 'clicks')
+    list_filter = ('status', 'target_program', 'start_date', 'end_date')
+    search_fields = ('title', 'advertiser', 'description')
+    readonly_fields = ('impressions', 'clicks', 'created_at', 'updated_at')
+    fieldsets = (
+        ('Advertisement Info', {
+            'fields': ('title', 'description', 'image_url')
+        }),
+        ('Targeting', {
+            'fields': ('target_program', 'start_date', 'end_date', 'display_duration')
+        }),
+        ('Advertiser Info', {
+            'fields': ('advertiser', 'advertiser_contact', 'advertiser_email')
+        }),
+        ('Call to Action', {
+            'fields': ('call_to_action', 'external_link')
+        }),
+        ('Status & Tracking', {
+            'fields': ('status', 'impressions', 'clicks')
+        }),
+        ('Metadata', {
+            'fields': ('created_at', 'updated_at')
+        }),
+    )
+    
+    def is_active(self, obj):
+        return obj.is_active
+    is_active.boolean = True
+    is_active.short_description = 'Active Now'
+```
+
+## **📱 Flutter App - Updated Code:**
+
+### **Updated Advertisement Class (Flutter):**
+```dart
+import 'package:flutter/material.dart';
+import 'package:audioplayers/audioplayers.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'dart:async';
+
+void main() {
+  runApp(const MyApp());
+}
+
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      title: 'Kilimanjaro Revival FM 95.9',
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.deepPurple,
+          brightness: Brightness.dark,
+        ),
+        useMaterial3: true,
+        fontFamily: 'Inter',
+      ),
+      home: const RadioHomePage(),
+    );
+  }
+}
+
+// ===== ADVERTISEMENT MODEL =====
+class Advertisement {
+  final String id;
+  final String title;
+  final String description;
+  final String imageUrl;
+  final String targetProgram;
+  final DateTime startDate;
+  final DateTime endDate;
+  final int displayDuration;
+  final String advertiser;
+  final String? advertiserContact;
+  final String? advertiserEmail;
+  final String? callToAction;
+  final String? externalLink;
+  final String status;
+  final int impressions;
+  final int clicks;
+  final bool isActive;
+
+  Advertisement({
+    required this.id,
+    required this.title,
+    required this.description,
+    required this.imageUrl,
+    required this.targetProgram,
+    required this.startDate,
+    required this.endDate,
+    required this.displayDuration,
+    required this.advertiser,
+    this.advertiserContact,
+    this.advertiserEmail,
+    this.callToAction,
+    this.externalLink,
+    required this.status,
+    required this.impressions,
+    required this.clicks,
+    required this.isActive,
+  });
+
+  factory Advertisement.fromJson(Map<String, dynamic> json) {
+    return Advertisement(
+      id: json['id'].toString(),
+      title: json['title'] ?? '',
+      description: json['description'] ?? '',
+      imageUrl: json['image_url'] ?? 'https://via.placeholder.com/400',
+      targetProgram: json['target_program'] ?? 'General',
+      startDate: DateTime.parse(json['start_date'] ?? DateTime.now().toString()),
+      endDate: DateTime.parse(json['end_date'] ?? DateTime.now().add(const Duration(days: 30)).toString()),
+      displayDuration: json['display_duration'] ?? 30,
+      advertiser: json['advertiser'] ?? '',
+      advertiserContact: json['advertiser_contact'],
+      advertiserEmail: json['advertiser_email'],
+      callToAction: json['call_to_action'],
+      externalLink: json['external_link'],
+      status: json['status'] ?? 'active',
+      impressions: json['impressions'] ?? 0,
+      clicks: json['clicks'] ?? 0,
+      isActive: json['is_active'] ?? false,
+    );
+  }
+
+  bool matchesProgram(String programTitle) {
+    return targetProgram == programTitle || targetProgram == 'General';
+  }
+}
+
+// ===== API SERVICE =====
+class ApiService {
+  // Change this to your Django API base URL
+  static const String baseUrl = 'https://your-django-api.com/api';
+  
+  // For testing, use a local server or ngrok
+  // static const String baseUrl = 'http://10.0.2.2:8000/api'; // Android emulator
+  // static const String baseUrl = 'http://localhost:8000/api'; // iOS simulator
+  
+  static Future<Map<String, dynamic>> fetchActiveAds() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/ads/active/'),
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+      ).timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return {
+          'success': true,
+          'data': data,
+        };
+      } else {
+        return {
+          'success': false,
+          'error': 'API Error: ${response.statusCode}',
+          'data': {'ads': []},
+        };
+      }
+    } catch (e) {
+      return {
+        'success': false,
+        'error': 'Network Error: $e',
+        'data': {'ads': []},
+      };
+    }
+  }
+
+  static Future<Map<String, dynamic>> fetchProgramAds(String programName) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/ads/program/$programName/'),
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+      ).timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return {
+          'success': true,
+          'data': data,
+        };
+      } else {
+        return {
+          'success': false,
+          'error': 'API Error: ${response.statusCode}',
+          'data': {'ads': []},
+        };
+      }
+    } catch (e) {
+      return {
+        'success': false,
+        'error': 'Network Error: $e',
+        'data': {'ads': []},
+      };
+    }
+  }
+
+  static Future<Map<String, dynamic>> trackClick(String adId) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/ads/track-click/$adId/'),
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+      ).timeout(const Duration(seconds: 5));
+
+      if (response.statusCode == 200) {
+        return {
+          'success': true,
+          'message': 'Click tracked successfully',
+        };
+      } else {
+        return {
+          'success': false,
+          'error': 'Failed to track click',
+        };
+      }
+    } catch (e) {
+      return {
+        'success': false,
+        'error': 'Network Error: $e',
+      };
+    }
+  }
+}
+
+// ===== MAIN RADIO PAGE =====
+class RadioHomePage extends StatefulWidget {
+  const RadioHomePage({super.key});
+
+  @override
+  State<RadioHomePage> createState() => _RadioHomePageState();
+}
+
+class _RadioHomePageState extends State<RadioHomePage> {
+  final AudioPlayer _player = AudioPlayer();
+  bool isPlaying = false;
+  bool isLoading = false;
+  bool isLoadingAds = false;
+  String errorMessage = '';
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  
+  // Settings state
+  double _volume = 1.0;
+  bool _notificationsEnabled = true;
+  bool _autoPlay = false;
+  String _selectedTheme = 'Dark';
+
+  // Favorites state
+  final List<Map<String, dynamic>> _favorites = [];
+
+  // Streaming URLs
+  final List<String> streamUrls = [
+    "http://uk3freenew.listen2myradio.com:7235/live",
+    "http://uk3freenew.listen2myradio.com:7235/stream",
+    "http://uk3freenew.listen2myradio.com:7235/;stream.mp3",
+    "http://uk3freenew.listen2myradio.com:7235/;stream.nsv",
+  ];
+
+  // ===== RADIO SCHEDULE =====
+  final List<EnhancedRadioProgram> todayPrograms = [
+    EnhancedRadioProgram(
+      title: "Morning Show",
+      start: const TimeOfDay(hour: 6, minute: 0),
+      end: const TimeOfDay(hour: 9, minute: 0),
+      description: "Habari, burudani na nyimbo bora za asubuhi",
+      host: "John Matata",
+      icon: Icons.wb_sunny,
+    ),
+    EnhancedRadioProgram(
+      title: "Mid-Morning Mix",
+      start: const TimeOfDay(hour: 9, minute: 0),
+      end: const TimeOfDay(hour: 12, minute: 0),
+      description: "Muziki mseto wa kisasa na wa zamani",
+      host: "Sarah Mwema",
+      icon: Icons.music_note,
+    ),
+    EnhancedRadioProgram(
+      title: "Habari za Mchana",
+      start: const TimeOfDay(hour: 12, minute: 0),
+      end: const TimeOfDay(hour: 13, minute: 0),
+      description: "Habari za mchana na matangazo muhimu",
+      host: "News Team",
+      icon: Icons.newspaper,
+    ),
+    EnhancedRadioProgram(
+      title: "Afternoon Gospel",
+      start: const TimeOfDay(hour: 13, minute: 0),
+      end: const TimeOfDay(hour: 16, minute: 0),
+      description: "Nyimbo za injili na mahubiri",
+      host: "Pastor James",
+      icon: Icons.church,
+    ),
+    EnhancedRadioProgram(
+      title: "Drive Time",
+      start: const TimeOfDay(hour: 16, minute: 0),
+      end: const TimeOfDay(hour: 18, minute: 0),
+      description: "Burudani ya safari ya nyumbani",
+      host: "DJ Flex",
+      icon: Icons.drive_eta,
+    ),
+    EnhancedRadioProgram(
+      title: "Evening Gospel",
+      start: const TimeOfDay(hour: 18, minute: 0),
+      end: const TimeOfDay(hour: 20, minute: 0),
+      description: "Nyimbo za injili jioni na maombi",
+      host: "Sister Grace",
+      icon: Icons.nightlight,
+    ),
+    EnhancedRadioProgram(
+      title: "Late Night Mix",
+      start: const TimeOfDay(hour: 20, minute: 0),
+      end: const TimeOfDay(hour: 22, minute: 0),
+      description: "Muziki wa usiku kwa wasomaji wako",
+      host: "DJ Midnight",
+      icon: Icons.nights_stay,
+    ),
+  ];
+
+  // Track schedule state
+  EnhancedRadioProgram? _currentProgram;
+  List<EnhancedRadioProgram> _upcomingPrograms = [];
+  List<EnhancedRadioProgram> _pastPrograms = [];
+
+  // Ads state
+  List<Advertisement> _allAds = [];
+  List<Advertisement> _currentAds = [];
+  int _currentAdIndex = 0;
+  Timer? _adRotationTimer;
+  bool _showAdsSection = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _setupPlayer();
+    _updateScheduleState();
+    _loadAdsFromAPI();
+    _startScheduleTimer();
+    _startAdRotationTimer();
+  }
+
+  @override
+  void dispose() {
+    _adRotationTimer?.cancel();
+    _player.dispose();
+    super.dispose();
+  }
+
+  void _startScheduleTimer() {
+    Timer.periodic(const Duration(minutes: 1), (timer) {
+      if (mounted) {
+        setState(() {
+          _updateScheduleState();
+        });
+      }
+    });
+  }
+
+  void _startAdRotationTimer() {
+    _adRotationTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
+      if (mounted && _currentAds.isNotEmpty) {
+        setState(() {
+          _currentAdIndex = (_currentAdIndex + 1) % _currentAds.length;
+        });
+      }
+    });
+  }
+
+  void _updateScheduleState() {
+    final now = DateTime.now();
+    final currentTime = TimeOfDay.fromDateTime(now);
+    
+    _currentProgram = null;
+    _upcomingPrograms = [];
+    _pastPrograms = [];
+
+    for (var program in todayPrograms) {
+      final programStartMinutes = program.start.hour * 60 + program.start.minute;
+      final programEndMinutes = program.end.hour * 60 + program.end.minute;
+      final currentMinutes = currentTime.hour * 60 + currentTime.minute;
+
+      if (currentMinutes >= programStartMinutes && currentMinutes < programEndMinutes) {
+        _currentProgram = program;
+      } else if (currentMinutes < programStartMinutes) {
+        _upcomingPrograms.add(program);
+      } else {
+        _pastPrograms.add(program);
+      }
+    }
+
+    _upcomingPrograms.sort((a, b) {
+      final aStart = a.start.hour * 60 + a.start.minute;
+      final bStart = b.start.hour * 60 + b.start.minute;
+      return aStart.compareTo(bStart);
+    });
+
+    // Update ads when program changes
+    _updateCurrentAds();
+  }
+
+  void _updateCurrentAds() {
+    if (_currentProgram == null) {
+      _currentAds = _allAds.where((ad) => ad.targetProgram == 'General').toList();
+    } else {
+      _currentAds = _allAds
+          .where((ad) => ad.matchesProgram(_currentProgram!.title))
+          .toList();
+    }
+    
+    _showAdsSection = _currentAds.isNotEmpty;
+    _currentAdIndex = _currentAds.isNotEmpty ? 0 : 0;
+  }
+
+  // === LOAD ADS FROM DJANGO API ===
+  Future<void> _loadAdsFromAPI() async {
+    setState(() {
+      isLoadingAds = true;
+    });
+
+    try {
+      final result = await ApiService.fetchActiveAds();
+      
+      if (result['success'] == true) {
+        final data = result['data'];
+        if (data['success'] == true && data['ads'] is List) {
+          setState(() {
+            _allAds = (data['ads'] as List)
+                .map((adData) => Advertisement.fromJson(adData))
+                .where((ad) => ad.isActive)
+                .toList();
+          });
+          
+          _updateCurrentAds();
+          
+          if (_allAds.isEmpty) {
+            // Show demo ads if API returns empty
+            _loadDemoAds();
+          }
+        } else {
+          _loadDemoAds();
+        }
+      } else {
+        _loadDemoAds();
+        // Show error message if needed
+        if (result['error'] != null) {
+          print('API Error: ${result['error']}');
+        }
+      }
+    } catch (e) {
+      print('Error loading ads: $e');
+      _loadDemoAds();
+    } finally {
+      setState(() {
+        isLoadingAds = false;
+      });
+    }
+  }
+
+  void _loadDemoAds() {
+    setState(() {
+      _allAds = [
+        Advertisement(
+          id: 'demo1',
+          title: '🎵 Demo: Tangazo la Redio',
+          description: 'Huu ni matangazo ya demo. Unaweza kuongeza matangazo yako halisi kwenye admin panel ya Django.',
+          imageUrl: 'https://images.unsplash.com/photo-1584820927498-cfe5211fd8bf?w=400&h-200&fit=crop',
+          targetProgram: 'General',
+          startDate: DateTime.now().subtract(const Duration(days: 1)),
+          endDate: DateTime.now().add(const Duration(days: 365)),
+          displayDuration: 30,
+          advertiser: 'Demo System',
+          status: 'active',
+          impressions: 0,
+          clicks: 0,
+          isActive: true,
+        ),
+        Advertisement(
+          id: 'demo2',
+          title: '📢 Set up Your Ads',
+          description: 'Ingia kwenye admin panel ya Django na uongeze matangazo yako halisi.',
+          imageUrl: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=400&h=200&fit=crop',
+          targetProgram: 'Morning Show',
+          startDate: DateTime.now().subtract(const Duration(days: 1)),
+          endDate: DateTime.now().add(const Duration(days: 365)),
+          displayDuration: 45,
+          advertiser: 'System Admin',
+          status: 'active',
+          impressions: 0,
+          clicks: 0,
+          isActive: true,
+        ),
+      ];
+      
+      _updateCurrentAds();
+    });
+  }
+
+  // === TRACK AD CLICK ===
+  Future<void> _trackAdClick(String adId) async {
+    try {
+      await ApiService.trackClick(adId);
+      // Optional: Show feedback or update UI
+    } catch (e) {
+      print('Failed to track click: $e');
+    }
+  }
+
+  // ... (rest of the code remains similar to previous version)
+
+  // In the ad card widget, add onTap to track clicks:
+  Widget _buildAdCard(Advertisement ad) {
+    return GestureDetector(
+      onTap: () {
+        _trackAdClick(ad.id);
+        if (ad.externalLink != null && ad.externalLink!.isNotEmpty) {
+          // Open external link if available
+          // You can use url_launcher package here
+          print('Opening: ${ad.externalLink}');
+        }
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        decoration: BoxDecoration(
+          color: Colors.deepPurple.shade800,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: Colors.purpleAccent.withOpacity(0.3),
+            width: 1,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.purpleAccent.withOpacity(0.2),
+              blurRadius: 10,
+              offset: const Offset(0, 5),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Ad Image
+            ClipRRect(
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(16),
+                topRight: Radius.circular(16),
+              ),
+              child: Image.network(
+                ad.imageUrl,
+                height: 180,
+                width: double.infinity,
+                fit: BoxFit.cover,
+                loadingBuilder: (context, child, loadingProgress) {
+                  if (loadingProgress == null) return child;
+                  return Container(
+                    height: 180,
+                    color: Colors.grey[800],
+                    child: Center(
+                      child: CircularProgressIndicator(
+                        value: loadingProgress.expectedTotalBytes != null
+                            ? loadingProgress.cumulativeBytesLoaded /
+                                loadingProgress.expectedTotalBytes!
+                            : null,
+                      ),
+                    ),
+                  );
+                },
+                errorBuilder: (context, error, stackTrace) {
+                  return Container(
+                    height: 180,
+                    color: Colors.grey[800],
+                    child: const Center(
+                      child: Icon(
+                        Icons.photo,
+                        color: Colors.white54,
+                        size: 50,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            
+            // Ad Content
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          ad.title,
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                      if (ad.targetProgram != 'General')
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.green.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            ad.targetProgram,
+                            style: const TextStyle(
+                              color: Colors.green,
+                              fontSize: 10,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  
+                  const SizedBox(height: 8),
+                  
+                  // Advertiser
+                  Text(
+                    'Mtangazaji: ${ad.advertiser}',
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 14,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                  
+                  const SizedBox(height: 12),
+                  
+                  // Description
+                  if (ad.description.isNotEmpty)
+                    Text(
+                      ad.description,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                      ),
+                    ),
+                  
+                  const SizedBox(height: 16),
+                  
+                  // Call to Action and Stats
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      if (ad.callToAction != null)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.purpleAccent,
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Row(
+                            children: [
+                              Text(
+                                ad.callToAction!,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              const Icon(Icons.touch_app, size: 16, color: Colors.white),
+                            ],
+                          ),
+                        ),
+                      
+                      // Stats
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            'Muda: ${ad.displayDuration}s',
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 12,
+                            ),
+                          ),
+                          Text(
+                            'Onesho: ${ad.impressions}',
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 10,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ===== ENHANCED RADIO PROGRAM CLASS =====
+class EnhancedRadioProgram {
+  final String title;
+  final TimeOfDay start;
+  final TimeOfDay end;
+  final String description;
+  final String host;
+  final IconData icon;
+
+  EnhancedRadioProgram({
+    required this.title,
+    required this.start,
+    required this.end,
+    this.description = '',
+    this.host = '',
+    required this.icon,
+  });
+}
+```
+
+## **🚀 Setup Instructions:**
+
+### **1. Django Setup:**
+```bash
+# Install Django & DRF
+pip install django djangorestframework
+
+# Create project
+django-admin startproject revalfm_api
+cd revalfm_api
+
+# Create app
+python manage.py startapp advertisements
+
+# Add to INSTALLED_APPS
+# settings.py
+INSTALLED_APPS = [
+    ...
+    'rest_framework',
+    'advertisements',
+]
+
+# Run migrations
+python manage.py makemigrations
+python manage.py migrate
+
+# Create superuser
+python manage.py createsuperuser
+
+# Run server
+python manage.py runserver
+```
+
+### **2. Add Sample Ads via Django Admin:**
+1. Go to `http://localhost:8000/admin/`
+2. Login with your superuser credentials
+3. Click "Advertisements" → "Add Advertisement"
+4. Fill in ad details:
+   - Title: "Tangazo la Sabuni"
+   - Description: "Sabuni bora kwa familia yako"
+   - Image URL: "https://example.com/image.jpg"
+   - Target Program: "Morning Show"
+   - Start Date: Today
+   - End Date: Next month
+   - Display Duration: 30
+   - Advertiser: "Your Company"
+
+### **3. Test API Endpoints:**
+- `GET /api/ads/active/` - All active ads
+- `GET /api/ads/program/Morning%20Show/` - Ads for specific program
+- `POST /api/ads/track-click/1/` - Track ad clicks
+- `GET /api/ads/statistics/` - Ad statistics
+
+### **4. Update Flutter App:**
+1. Change `baseUrl` in `ApiService` class to your Django server URL
+2. For testing on Android emulator: `http://10.0.2.2:8000/api`
+3. For testing on physical device: Use ngrok or deploy to server
+
+## **🔧 Features Included:**
+
+### **Django Admin Features:**
+- ✅ Full CRUD for advertisements
+- ✅ Program targeting
+- ✅ Date scheduling
+- ✅ Impression/click tracking
+- ✅ Status management
+
+### **API Features:**
+- ✅ Get active ads
+- ✅ Get program-specific ads
+- ✅ Track clicks
+- ✅ View statistics
+- ✅ Error handling
+
+### **Flutter App Features:**
+- ✅ Live ad fetching from Django API
+- ✅ Program-targeted ads
+- ✅ Click tracking
+- ✅ Demo ads fallback
+- ✅ Image loading with error handling
+- ✅ Ad rotation every 10 seconds
+
+## **📊 Admin Panel Preview:**
+![Admin Panel](https://via.placeholder.com/800x400/4a5568/ffffff?text=Django+Admin+Panel+with+Ads+Management)
+
+Sasa una **mfumo kamili wa matangazo** unaoendana na Django REST API! Unaweza kuongeza, kuhariri, na kufuatilia matangazo yako kwa urahisi kupitia admin panel ya Django.
+-------------------------------------------------------------------------
+import 'dart:async';
+import 'dart:convert';
+
+import 'package:flutter/material.dart';
+import 'package:audioplayers/audioplayers.dart';
+import 'package:http/http.dart' as http;
+import 'package:revalfm/screen/favorites_page.dart';
+import 'package:revalfm/screen/setting_page.dart';
+import 'package:wave/wave.dart';
+import 'package:wave/config.dart';
+
+void main() {
+  runApp(const MyApp());
+}
+
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      title: 'Kilimanjaro Revival FM 95.9',
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.deepPurple,
+          brightness: Brightness.dark,
+        ),
+        useMaterial3: true,
+        fontFamily: 'Inter',
+      ),
+      home: const RadioHomePage(),
+    );
+  }
+}
+
+// ===== EXTENDED RADIO PROGRAM MODEL =====
+class EnhancedRadioProgram {
+  final String title;
+  final TimeOfDay start;
+  final TimeOfDay end;
+  final String description;
+  final String host;
+  final IconData icon;
+
+  EnhancedRadioProgram({
+    required this.title,
+    required this.start,
+    required this.end,
+    this.description = '',
+    this.host = '',
+    required this.icon,
+  });
+}
+
+// ===== ADVERTISEMENT MODEL =====
+class Advertisement {
+  final String id;
+  final String title;
+  final String description;
+  final String imageUrl;
+  final String targetProgram;
+  final DateTime startDate;
+  final DateTime endDate;
+  final int displayDuration;
+  final String advertiser;
+  final String? callToAction;
+  final String? externalLink;
+
+  Advertisement({
+    required this.id,
+    required this.title,
+    required this.description,
+    required this.imageUrl,
+    required this.targetProgram,
+    required this.startDate,
+    required this.endDate,
+    required this.displayDuration,
+    required this.advertiser,
+    this.callToAction,
+    this.externalLink,
+  });
+
+  factory Advertisement.fromJson(Map<String, dynamic> json) {
+    return Advertisement(
+      id: json['id'] ?? '',
+      title: json['title'] ?? '',
+      description: json['description'] ?? '',
+      imageUrl: json['image_url'] ?? 'https://via.placeholder.com/400',
+      targetProgram: json['target_program'] ?? 'General',
+      startDate: DateTime.parse(
+        json['start_date'] ?? DateTime.now().toString(),
+      ),
+      endDate: DateTime.parse(
+        json['end_date'] ??
+            DateTime.now().add(const Duration(days: 30)).toString(),
+      ),
+      displayDuration: json['display_duration'] ?? 30,
+      advertiser: json['advertiser'] ?? '',
+      callToAction: json['call_to_action'],
+      externalLink: json['external_link'],
+    );
+  }
+
+  bool isActive() {
+    final now = DateTime.now();
+    return now.isAfter(startDate) && now.isBefore(endDate);
+  }
+
+  bool matchesProgram(String programTitle) {
+    return targetProgram == programTitle || targetProgram == 'General';
+  }
+}
+
+class RadioHomePage extends StatefulWidget {
+  const RadioHomePage({super.key});
+
+  @override
+  State<RadioHomePage> createState() => _RadioHomePageState();
+}
+
+class _RadioHomePageState extends State<RadioHomePage> {
+  final AudioPlayer _player = AudioPlayer();
+  bool isPlaying = false;
+  bool isLoading = false;
+  bool isLoadingAds = false;
+  String errorMessage = '';
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+
+  // Settings state
+  double _volume = 1.0;
+  bool _notificationsEnabled = true;
+  bool _autoPlay = false;
+  String _selectedTheme = 'Dark';
+
+  // Favorites state
+  final List<Map<String, dynamic>> _favorites = [];
+
+  // Django REST API URL (Change this to your actual API endpoint)
+  final String apiBaseUrl = 'https://your-django-api.com/api';
+
+  // Streaming URLs
+  final List<String> streamUrls = [
+    "http://uk3freenew.listen2myradio.com:7235/live",
+    "http://uk3freenew.listen2myradio.com:7235/stream",
+    "http://uk3freenew.listen2myradio.com:7235/;stream.mp3",
+    "http://uk3freenew.listen2myradio.com:7235/;stream.nsv",
+  ];
+
+  // ===== IMPROVED RADIO SCHEDULE =====
+  final List<EnhancedRadioProgram> todayPrograms = [
+    EnhancedRadioProgram(
+      title: "Morning Show",
+      start: const TimeOfDay(hour: 6, minute: 0),
+      end: const TimeOfDay(hour: 9, minute: 0),
+      description: "Habari, burudani na nyimbo bora za asubuhi",
+      host: "John Matata",
+      icon: Icons.wb_sunny,
+    ),
+    EnhancedRadioProgram(
+      title: "Mid-Morning Mix",
+      start: const TimeOfDay(hour: 9, minute: 0),
+      end: const TimeOfDay(hour: 12, minute: 0),
+      description: "Muziki mseto wa kisasa na wa zamani",
+      host: "Sarah Mwema",
+      icon: Icons.music_note,
+    ),
+    EnhancedRadioProgram(
+      title: "Habari za Mchana",
+      start: const TimeOfDay(hour: 12, minute: 0),
+      end: const TimeOfDay(hour: 13, minute: 0),
+      description: "Habari za mchana na matangazo muhimu",
+      host: "News Team",
+      icon: Icons.newspaper,
+    ),
+    EnhancedRadioProgram(
+      title: "Afternoon Gospel",
+      start: const TimeOfDay(hour: 13, minute: 0),
+      end: const TimeOfDay(hour: 16, minute: 0),
+      description: "Nyimbo za injili na mahubiri",
+      host: "Pastor James",
+      icon: Icons.church,
+    ),
+    EnhancedRadioProgram(
+      title: "Drive Time",
+      start: const TimeOfDay(hour: 16, minute: 0),
+      end: const TimeOfDay(hour: 18, minute: 0),
+      description: "Burudani ya safari ya nyumbani",
+      host: "DJ Flex",
+      icon: Icons.drive_eta,
+    ),
+    EnhancedRadioProgram(
+      title: "Evening Gospel",
+      start: const TimeOfDay(hour: 18, minute: 0),
+      end: const TimeOfDay(hour: 20, minute: 0),
+      description: "Nyimbo za injili jioni na maombi",
+      host: "Sister Grace",
+      icon: Icons.nightlight,
+    ),
+    EnhancedRadioProgram(
+      title: "Late Night Mix",
+      start: const TimeOfDay(hour: 20, minute: 0),
+      end: const TimeOfDay(hour: 22, minute: 0),
+      description: "Muziki wa usiku kwa wasomaji wako",
+      host: "DJ Midnight",
+      icon: Icons.nights_stay,
+    ),
+  ];
+
+  // Track schedule state
+  EnhancedRadioProgram? _currentProgram;
+  List<EnhancedRadioProgram> _upcomingPrograms = [];
+  List<EnhancedRadioProgram> _pastPrograms = [];
+
+  // Ads state
+  List<Advertisement> _allAds = [];
+  List<Advertisement> _currentAds = [];
+  int _currentAdIndex = 0;
+  Timer? _adRotationTimer;
+  bool _showAdsSection = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _setupPlayer();
+    _updateScheduleState();
+    _loadAdsFromAPI();
+    _startScheduleTimer();
+    _startAdRotationTimer();
+  }
+
+  @override
+  void dispose() {
+    _adRotationTimer?.cancel();
+    _player.dispose();
+    super.dispose();
+  }
+
+  void _startScheduleTimer() {
+    Timer.periodic(const Duration(minutes: 1), (timer) {
+      if (mounted) {
+        setState(() {
+          _updateScheduleState();
+        });
+      }
+    });
+  }
+
+  void _startAdRotationTimer() {
+    // Rotate ads every 10 seconds
+    _adRotationTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
+      if (mounted) {
+        setState(() {
+          if (_currentAds.isNotEmpty) {
+            _currentAdIndex = (_currentAdIndex + 1) % _currentAds.length;
+          }
+        });
+      }
+    });
+  }
+
+  void _updateScheduleState() {
+    final now = DateTime.now();
+    final currentTime = TimeOfDay.fromDateTime(now);
+
+    _currentProgram = null;
+    _upcomingPrograms = [];
+    _pastPrograms = [];
+
+    for (var program in todayPrograms) {
+      final programStartMinutes =
+          program.start.hour * 60 + program.start.minute;
+      final programEndMinutes = program.end.hour * 60 + program.end.minute;
+      final currentMinutes = currentTime.hour * 60 + currentTime.minute;
+
+      if (currentMinutes >= programStartMinutes &&
+          currentMinutes < programEndMinutes) {
+        _currentProgram = program;
+      } else if (currentMinutes < programStartMinutes) {
+        _upcomingPrograms.add(program);
+      } else {
+        _pastPrograms.add(program);
+      }
+    }
+
+    // Sort upcoming programs by start time
+    _upcomingPrograms.sort((a, b) {
+      final aStart = a.start.hour * 60 + a.start.minute;
+      final bStart = b.start.hour * 60 + b.start.minute;
+      return aStart.compareTo(bStart);
+    });
+
+    // Update ads based on current program
+    _updateCurrentAds();
+  }
+
+  void _updateCurrentAds() {
+    if (_currentProgram == null) {
+      _currentAds = _allAds
+          .where((ad) => ad.targetProgram == 'General')
+          .toList();
+    } else {
+      _currentAds = _allAds
+          .where((ad) => ad.matchesProgram(_currentProgram!.title))
+          .toList();
+    }
+
+    _showAdsSection = _currentAds.isNotEmpty;
+    _currentAdIndex = _currentAds.isNotEmpty ? 0 : 0;
+  }
+
+  // === LOAD ADS FROM DJANGO REST API ===
+  Future<void> _loadAdsFromAPI() async {
+    setState(() {
+      isLoadingAds = true;
+    });
+
+    try {
+      final response = await http
+          .get(
+            Uri.parse('$apiBaseUrl/advertisements/active/'),
+            headers: {
+              'Accept': 'application/json',
+              'Content-Type': 'application/json',
+            },
+          )
+          .timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+
+        if (data is List) {
+          setState(() {
+            _allAds = data
+                .map((adData) => Advertisement.fromJson(adData))
+                .where((ad) => ad.isActive()) // Only show active ads
+                .toList();
+          });
+
+          _updateCurrentAds();
+
+          if (_allAds.isEmpty) {
+            // Load sample ads if API returns empty
+            _loadSampleAds();
+          }
+        } else {
+          _loadSampleAds();
+        }
+      } else {
+        _loadSampleAds();
+      }
+    } catch (e) {
+      print('Error loading ads from API: $e');
+      _loadSampleAds();
+    } finally {
+      setState(() {
+        isLoadingAds = false;
+      });
+    }
+  }
+
+  void _loadSampleAds() {
+    setState(() {
+      _allAds = [
+        Advertisement(
+          id: '1',
+          title: 'Tangazo la Sabuni Omo',
+          description: 'Sabuni bora ya kuosha nguo zako kwa ufasaha',
+          imageUrl:
+              'https://images.unsplash.com/photo-1586023492125-27b2c045efd7?w=400&h=200&fit=crop',
+          targetProgram: 'Morning Show',
+          startDate: DateTime.now().subtract(const Duration(days: 1)),
+          endDate: DateTime.now().add(const Duration(days: 30)),
+          displayDuration: 30,
+          advertiser: 'CleanCo Tanzania',
+          callToAction: 'Nunua Sasa',
+        ),
+        Advertisement(
+          id: '2',
+          title: 'Majisafi Pure Water',
+          description: 'Majisafi ya kunywa yenye virutubisho',
+          imageUrl:
+              'https://images.unsplash.com/photo-1523362628745-0c100150b504?w=400&h=200&fit=crop',
+          targetProgram: 'Habari za Mchana',
+          startDate: DateTime.now().subtract(const Duration(days: 1)),
+          endDate: DateTime.now().add(const Duration(days: 30)),
+          displayDuration: 45,
+          advertiser: 'Pure Water Ltd',
+        ),
+        Advertisement(
+          id: '3',
+          title: 'Duka la Viatu Bora',
+          description: 'Viatu vya kisasa kwa bei nafuu',
+          imageUrl:
+              'https://images.unsplash.com/photo-1549298916-b41d501d3772?w=400&h=200&fit=crop',
+          targetProgram: 'General',
+          startDate: DateTime.now().subtract(const Duration(days: 1)),
+          endDate: DateTime.now().add(const Duration(days: 30)),
+          displayDuration: 30,
+          advertiser: 'Shoes Mart',
+          callToAction: 'Tembelea Duka Letu',
+        ),
+      ];
+
+      _updateCurrentAds();
+    });
+  }
+
+  String _getTimeUntilStart(EnhancedRadioProgram program) {
+    final now = DateTime.now();
+    final programStart = DateTime(
+      now.year,
+      now.month,
+      now.day,
+      program.start.hour,
+      program.start.minute,
+    );
+
+    final difference = programStart.difference(now);
+
+    if (difference.inMinutes < 60) {
+      return 'Inaanza baada ya ${difference.inMinutes} dakika';
+    } else if (difference.inHours < 24) {
+      final hours = difference.inHours;
+      final minutes = difference.inMinutes % 60;
+      return 'Inaanza baada ya $hours saa ${minutes > 0 ? 'na $minutes dakika' : ''}';
+    } else {
+      return 'Inaanza ${program.start.format(context)}';
+    }
+  }
+
+  String _getProgressPercentage(EnhancedRadioProgram program) {
+    if (_currentProgram != program) return '';
+
+    final now = DateTime.now();
+    final programStart = DateTime(
+      now.year,
+      now.month,
+      now.day,
+      program.start.hour,
+      program.start.minute,
+    );
+    final programEnd = DateTime(
+      now.year,
+      now.month,
+      now.day,
+      program.end.hour,
+      program.end.minute,
+    );
+
+    final totalDuration = programEnd.difference(programStart).inMinutes;
+    final elapsed = now.difference(programStart).inMinutes;
+
+    if (totalDuration > 0) {
+      final percentage = (elapsed / totalDuration * 100).toInt();
+      return '$percentage% imekwisha';
+    }
+
+    return '';
+  }
+
+  void _setupPlayer() {
+    _player.onPlayerStateChanged.listen((PlayerState state) {
+      setState(() {
+        isPlaying = state == PlayerState.playing;
+      });
+    });
+
+    _player.onPlayerComplete.listen((event) {
+      setState(() {
+        isPlaying = false;
+        isLoading = false;
+      });
+    });
+  }
+
+  void _toggleRadio() {
+    if (isLoading) return;
+
+    if (isPlaying) {
+      _stopRadio();
+    } else {
+      _startRadio();
+    }
+  }
+
+  Future<void> _startRadio() async {
+    setState(() {
+      isLoading = true;
+      errorMessage = '';
+    });
+
+    try {
+      bool success = false;
+      for (String url in streamUrls) {
+        try {
+          await _player.setSource(UrlSource(url));
+          await _player.resume();
+          success = true;
+          break;
+        } catch (_) {
+          continue;
+        }
+      }
+
+      if (!success) {
+        setState(() {
+          errorMessage =
+              'Haikuweza kushikamana na redio. Angalia mtandao wako.';
+          isLoading = false;
+        });
+      } else {
+        setState(() {
+          isLoading = false;
+        });
+      }
+    } catch (e) {
+      setState(() {
+        errorMessage = 'Hitilafu: ${e.toString()}';
+        isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _stopRadio() async {
+    try {
+      await _player.stop();
+      setState(() {
+        isPlaying = false;
+        isLoading = false;
+        errorMessage = '';
+      });
+    } catch (e) {
+      setState(() {
+        errorMessage = 'Hitilafu ya kusitisha redio: ${e.toString()}';
+      });
+    }
+  }
+
+  Widget _buildDrawer() {
+    return Drawer(
+      backgroundColor: Colors.deepPurple.shade900.withOpacity(0.95),
+      child: ListView(
+        padding: EdgeInsets.zero,
+        children: [
+          DrawerHeader(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Colors.deepPurple, Colors.purpleAccent],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                CircleAvatar(
+                  radius: 30,
+                  backgroundColor: Colors.white.withOpacity(0.2),
+                  child: const Icon(Icons.radio, size: 35, color: Colors.white),
+                ),
+                const SizedBox(height: 10),
+                const Text(
+                  'Kilimanjaro Revival FM 95.9',
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+                const Text(
+                  'Redio Yako Inayopendwa',
+                  style: TextStyle(fontSize: 14, color: Colors.white70),
+                ),
+              ],
+            ),
+          ),
+          _buildDrawerItem(
+            icon: Icons.home,
+            title: 'Nyumbani',
+            onTap: () {
+              Navigator.pop(context);
+            },
+          ),
+          _buildDrawerItem(
+            icon: Icons.favorite,
+            title: 'Vipendwa',
+            onTap: () {
+              Navigator.pop(context);
+              _showFavoritesPage();
+            },
+          ),
+          _buildDrawerItem(
+            icon: Icons.refresh,
+            title: 'Sasisha Matangazo',
+            onTap: () {
+              Navigator.pop(context);
+              _loadAdsFromAPI();
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: const Text('Inasasisha matangazo...'),
+                  backgroundColor: Colors.green.shade700,
+                ),
+              );
+            },
+          ),
+          _buildDrawerItem(
+            icon: Icons.settings,
+            title: 'Mipangilio',
+            onTap: () {
+              Navigator.pop(context);
+              _showSettingsPage();
+            },
+          ),
+          _buildDrawerItem(
+            icon: Icons.info,
+            title: 'Kuhusu',
+            onTap: () {
+              Navigator.pop(context);
+              _showAboutPage();
+            },
+          ),
+          const Divider(color: Colors.white30),
+          _buildDrawerItem(
+            icon: Icons.share,
+            title: 'Sambaza App',
+            onTap: () {},
+          ),
+          _buildDrawerItem(
+            icon: Icons.star,
+            title: 'Tathmini App',
+            onTap: () {},
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 15),
+            alignment: Alignment.center,
+            child: const Text(
+              "Patrice S Mgala - Software Engineering\nmgantitech.co.tz\nToleo 1.0.0",
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.white70,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDrawerItem({
+    required IconData icon,
+    required String title,
+    required VoidCallback onTap,
+  }) {
+    return ListTile(
+      leading: Icon(icon, color: Colors.white70),
+      title: Text(title, style: const TextStyle(color: Colors.white)),
+      onTap: onTap,
+      hoverColor: Colors.white.withOpacity(0.1),
+    );
+  }
+
+  void _showSettingsPage() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => SettingsPage(
+          volume: _volume,
+          notificationsEnabled: _notificationsEnabled,
+          autoPlay: _autoPlay,
+          selectedTheme: _selectedTheme,
+          onSettingsChanged:
+              (newVolume, newNotifications, newAutoPlay, newTheme) {
+                setState(() {
+                  _volume = newVolume;
+                  _notificationsEnabled = newNotifications;
+                  _autoPlay = newAutoPlay;
+                  _selectedTheme = newTheme;
+                });
+                _saveSettings();
+              },
+        ),
+      ),
+    );
+  }
+
+  void _showAboutPage() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.deepPurple.shade900,
+        title: const Row(
+          children: [
+            Icon(Icons.radio, color: Colors.white),
+            SizedBox(width: 10),
+            Text('Kuhusu App', style: TextStyle(color: Colors.white)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Kilimanjaro Revival FM 95.9',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 18,
+              ),
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              'Redio bora ya Kikristo na Habari',
+              style: TextStyle(color: Colors.white70),
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              'Imetengenezwa na:',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const Text(
+              'Patrice S Mgala',
+              style: TextStyle(color: Colors.white70),
+            ),
+            const Text(
+              'Software Engineering',
+              style: TextStyle(color: Colors.white70),
+            ),
+            const SizedBox(height: 10),
+            GestureDetector(
+              onTap: () {},
+              child: const Text(
+                'mgantitech.co.tz',
+                style: TextStyle(
+                  color: Colors.blue,
+                  decoration: TextDecoration.underline,
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              'Toleo 1.0.0',
+              style: TextStyle(color: Colors.white54, fontSize: 12),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Sawa'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showFavoritesPage() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => FavoritesPage(
+          favorites: _favorites,
+          onPlayStation: (station) {
+            _startRadio();
+          },
+          onRemoveFavorite: (station) {
+            setState(() {
+              _favorites.remove(station);
+            });
+          },
+        ),
+      ),
+    );
+  }
+
+  void _toggleFavorite() {
+    setState(() {
+      bool isFavorite = _favorites.any(
+        (fav) => fav['name'] == 'Kilimanjaro Revival FM 95.9',
+      );
+      if (isFavorite) {
+        _favorites.removeWhere(
+          (fav) => fav['name'] == 'Kilimanjaro Revival FM 95.9',
+        );
+      } else {
+        _favorites.add({
+          'name': 'Kilimanjaro Revival FM 95.9',
+          'url': streamUrls.first,
+          'image': 'assets/radio_icon.png',
+          'addedAt': DateTime.now(),
+        });
+      }
+    });
+  }
+
+  bool get _isFavorite {
+    return _favorites.any(
+      (fav) => fav['name'] == 'Kilimanjaro Revival FM 95.9',
+    );
+  }
+
+  void _saveSettings() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text('Mipangilio imehifadhiwa!'),
+        backgroundColor: Colors.green.shade700,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final now = TimeOfDay.now();
+    final currentTimeStr = now.format(context);
+
+    return Scaffold(
+      key: _scaffoldKey,
+      drawer: _buildDrawer(),
+      backgroundColor: Colors.deepPurple.shade900,
+      floatingActionButton: FloatingActionButton.extended(
+        backgroundColor: isPlaying
+            ? Colors.red.shade700
+            : Colors.green.shade700,
+        onPressed: _toggleRadio,
+        icon: isLoading
+            ? const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  color: Colors.white,
+                  strokeWidth: 2,
+                ),
+              )
+            : Icon(isPlaying ? Icons.stop : Icons.play_arrow),
+        label: isLoading
+            ? const Text('INAANGAZA...')
+            : Text(isPlaying ? 'SIMAMISHA' : 'CHEZA'),
+        elevation: 8,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+      ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+      body: SafeArea(
+        child: Column(
+          children: [
+            // Simple App Bar
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Colors.deepPurple.shade800, Colors.purple.shade800],
+                ),
+              ),
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.menu, color: Colors.white),
+                    onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+                  ),
+                  const SizedBox(width: 8),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Kilimanjaro Revival',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                      Text(
+                        currentTimeStr,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.white.withOpacity(0.8),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    icon: Icon(
+                      _isFavorite ? Icons.favorite : Icons.favorite_border,
+                      color: _isFavorite ? Colors.red : Colors.white,
+                    ),
+                    onPressed: _toggleFavorite,
+                  ),
+                ],
+              ),
+            ),
+
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.only(bottom: 80),
+                child: Column(
+                  children: [
+                    const SizedBox(height: 20),
+
+                    // Current Program Card
+                    if (_currentProgram != null)
+                      Container(
+                        margin: const EdgeInsets.symmetric(horizontal: 20),
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              Colors.green.shade800.withOpacity(0.8),
+                              Colors.green.shade600.withOpacity(0.8),
+                            ],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(20),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.green.withOpacity(0.3),
+                              blurRadius: 15,
+                              offset: const Offset(0, 5),
+                            ),
+                          ],
+                        ),
+                        child: Column(
+                          children: [
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withOpacity(0.2),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Icon(
+                                    _currentProgram!.icon,
+                                    color: Colors.white,
+                                    size: 24,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          const Icon(
+                                            Icons.circle,
+                                            color: Colors.white,
+                                            size: 10,
+                                          ),
+                                          const SizedBox(width: 6),
+                                          Text(
+                                            'KIPINDI KINACHOCHEZA',
+                                            style: TextStyle(
+                                              color: Colors.white.withOpacity(
+                                                0.9,
+                                              ),
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        _currentProgram!.title,
+                                        style: const TextStyle(
+                                          fontSize: 20,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                      Text(
+                                        '${_currentProgram!.start.format(context)} - ${_currentProgram!.end.format(context)}',
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          color: Colors.white.withOpacity(0.8),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            if (_currentProgram!.description.isNotEmpty)
+                              Text(
+                                _currentProgram!.description,
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.white.withOpacity(0.9),
+                                ),
+                              ),
+                            const SizedBox(height: 8),
+                            if (_currentProgram!.host.isNotEmpty)
+                              Row(
+                                children: [
+                                  const Icon(
+                                    Icons.person,
+                                    size: 14,
+                                    color: Colors.white70,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    'Mwenye kipindi: ${_currentProgram!.host}',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      color: Colors.white.withOpacity(0.8),
+                                      fontStyle: FontStyle.italic,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            const SizedBox(height: 12),
+                            // Progress indicator
+                            LinearProgressIndicator(
+                              value:
+                                  _getProgressPercentage(
+                                    _currentProgram!,
+                                  ).replaceAll('% imekwisha', '').isEmpty
+                                  ? 0.5
+                                  : int.parse(
+                                          _getProgressPercentage(
+                                            _currentProgram!,
+                                          ).replaceAll('% imekwisha', ''),
+                                        ) /
+                                        100,
+                              backgroundColor: Colors.white.withOpacity(0.2),
+                              color: Colors.white,
+                              minHeight: 4,
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  _currentProgram!.start.format(context),
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.white.withOpacity(0.7),
+                                  ),
+                                ),
+                                Text(
+                                  _getProgressPercentage(_currentProgram!),
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.white.withOpacity(0.7),
+                                  ),
+                                ),
+                                Text(
+                                  _currentProgram!.end.format(context),
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.white.withOpacity(0.7),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+
+                    const SizedBox(height: 20),
+
+                    // Radio Player Card
+                    Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 20),
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            Colors.deepPurple.shade800,
+                            Colors.purple.shade800,
+                          ],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.3),
+                            blurRadius: 20,
+                            offset: const Offset(0, 10),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        children: [
+                          Container(
+                            width: 100,
+                            height: 100,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              gradient: LinearGradient(
+                                colors: [
+                                  Colors.purpleAccent,
+                                  Colors.deepPurpleAccent,
+                                ],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.purpleAccent.withOpacity(0.4),
+                                  blurRadius: 15,
+                                  spreadRadius: 2,
+                                ),
+                              ],
+                            ),
+                            child: const Icon(
+                              Icons.radio,
+                              size: 50,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+
+                          const Text(
+                            'Kilimanjaro Revival FM 95.9',
+                            style: TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          const Text(
+                            'Redio ya Kikristo na Habari',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.white70,
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+
+                          if (errorMessage.isNotEmpty)
+                            Container(
+                              margin: const EdgeInsets.only(bottom: 16),
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.redAccent.withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: Colors.redAccent),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(
+                                    Icons.error,
+                                    color: Colors.redAccent,
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      errorMessage,
+                                      style: const TextStyle(
+                                        fontSize: 14,
+                                        color: Colors.redAccent,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+
+                          if (isPlaying)
+                            Container(
+                              height: 100,
+                              margin: const EdgeInsets.only(bottom: 20),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(12),
+                                color: Colors.black.withOpacity(0.3),
+                              ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(12),
+                                child: WaveWidget(
+                                  config: CustomConfig(
+                                    gradients: [
+                                      [
+                                        Colors.purpleAccent,
+                                        Colors.deepPurpleAccent,
+                                      ],
+                                      [Colors.pinkAccent, Colors.purpleAccent],
+                                    ],
+                                    durations: [35000, 19440],
+                                    heightPercentages: [0.2, 0.25],
+                                    blur: const MaskFilter.blur(
+                                      BlurStyle.solid,
+                                      8,
+                                    ),
+                                    gradientBegin: Alignment.bottomLeft,
+                                    gradientEnd: Alignment.topRight,
+                                  ),
+                                  waveAmplitude: isPlaying ? 20 : 0,
+                                  size: const Size(
+                                    double.infinity,
+                                    double.infinity,
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+
+                    const SizedBox(height: 30),
+
+                    // ===== ADS SECTION =====
+                    if (_showAdsSection)
+                      Container(
+                        margin: const EdgeInsets.symmetric(horizontal: 20),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(
+                                  Icons.ads_click,
+                                  color: Colors.white,
+                                ),
+                                const SizedBox(width: 8),
+                                const Text(
+                                  "Matangazo",
+                                  style: TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                const Spacer(),
+                                if (isLoadingAds)
+                                  const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                if (_currentProgram != null)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 4,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.green.withOpacity(0.2),
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
+                                    child: Text(
+                                      'Kipindi: ${_currentProgram!.title}',
+                                      style: const TextStyle(
+                                        color: Colors.green,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+
+                            // Current Ad Display
+                            if (_currentAds.isNotEmpty &&
+                                _currentAds.length > _currentAdIndex)
+                              _buildAdCard(_currentAds[_currentAdIndex]),
+
+                            // Ad Counter
+                            if (_currentAds.length > 1)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 10),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    for (int i = 0; i < _currentAds.length; i++)
+                                      Container(
+                                        width: 8,
+                                        height: 8,
+                                        margin: const EdgeInsets.symmetric(
+                                          horizontal: 4,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          color: i == _currentAdIndex
+                                              ? Colors.purpleAccent
+                                              : Colors.white.withOpacity(0.3),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+
+                    const SizedBox(height: 30),
+
+                    // Schedule Section
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.schedule, color: Colors.white),
+                              const SizedBox(width: 8),
+                              const Text(
+                                "Ratiba ya Leo",
+                                style: TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              const Spacer(),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Text(
+                                  '${todayPrograms.length} vipindi',
+                                  style: const TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+
+                          // Upcoming Programs
+                          if (_upcomingPrograms.isNotEmpty)
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  "Vijavyo",
+                                  style: TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                ..._upcomingPrograms.map((program) {
+                                  return _buildProgramCard(
+                                    program,
+                                    false,
+                                    true,
+                                  );
+                                }),
+                                const SizedBox(height: 20),
+                              ],
+                            ),
+
+                          // Past Programs
+                          if (_pastPrograms.isNotEmpty)
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  "Vilivyopita",
+                                  style: TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                ..._pastPrograms.map((program) {
+                                  return _buildProgramCard(
+                                    program,
+                                    false,
+                                    false,
+                                  );
+                                }),
+                              ],
+                            ),
+                        ],
+                      ),
+                    ),
+
+                    const SizedBox(height: 30),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProgramCard(
+    EnhancedRadioProgram program,
+    bool isCurrent,
+    bool isUpcoming,
+  ) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: isCurrent
+            ? Colors.greenAccent.withOpacity(0.3)
+            : isUpcoming
+            ? Colors.blueAccent.withOpacity(0.1)
+            : Colors.white.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isCurrent
+              ? Colors.greenAccent
+              : isUpcoming
+              ? Colors.blueAccent.withOpacity(0.3)
+              : Colors.transparent,
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: isCurrent
+                  ? Colors.greenAccent.withOpacity(0.2)
+                  : isUpcoming
+                  ? Colors.blueAccent.withOpacity(0.2)
+                  : Colors.white.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(
+              program.icon,
+              color: isCurrent
+                  ? Colors.greenAccent
+                  : isUpcoming
+                  ? Colors.blueAccent
+                  : Colors.white70,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  program.title,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
+                    fontSize: 16,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '${program.start.format(context)} - ${program.end.format(context)}',
+                  style: TextStyle(color: Colors.white70, fontSize: 13),
+                ),
+                if (isUpcoming && !isCurrent)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      _getTimeUntilStart(program),
+                      style: const TextStyle(
+                        color: Colors.blueAccent,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAdCard(Advertisement ad) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: Colors.deepPurple.shade800,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: Colors.purpleAccent.withOpacity(0.3),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.purpleAccent.withOpacity(0.2),
+            blurRadius: 10,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Ad Image
+          ClipRRect(
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(16),
+              topRight: Radius.circular(16),
+            ),
+            child: Image.network(
+              ad.imageUrl,
+              height: 180,
+              width: double.infinity,
+              fit: BoxFit.cover,
+              loadingBuilder: (context, child, loadingProgress) {
+                if (loadingProgress == null) return child;
+                return Container(
+                  height: 180,
+                  color: Colors.grey[800],
+                  child: const Center(child: CircularProgressIndicator()),
+                );
+              },
+              errorBuilder: (context, error, stackTrace) {
+                return Container(
+                  height: 180,
+                  color: Colors.grey[800],
+                  child: const Center(
+                    child: Icon(Icons.photo, color: Colors.white54, size: 50),
+                  ),
+                );
+              },
+            ),
+          ),
+
+          // Ad Content
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Title and Advertiser
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        ad.title,
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                    if (ad.targetProgram != 'General')
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.green.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          ad.targetProgram,
+                          style: const TextStyle(
+                            color: Colors.green,
+                            fontSize: 10,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+
+                const SizedBox(height: 8),
+
+                // Advertiser
+                Text(
+                  'Mtangazaji: ${ad.advertiser}',
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: 14,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+
+                const SizedBox(height: 12),
+
+                // Description
+                if (ad.description.isNotEmpty)
+                  Text(
+                    ad.description,
+                    style: const TextStyle(color: Colors.white, fontSize: 14),
+                  ),
+
+                const SizedBox(height: 16),
+
+                // Call to Action and Duration
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    if (ad.callToAction != null)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.purpleAccent,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          ad.callToAction!,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+
+                    Text(
+                      'Muda: ${ad.displayDuration}s',
+                      style: TextStyle(color: Colors.white70, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
