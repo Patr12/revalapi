@@ -4,7 +4,7 @@ import 'package:http/http.dart' as http;
 import 'auth_service.dart';
 
 class DashboardService {
-  static const String baseUrl = 'http://10.0.2.2:8000/api';
+  static const String baseUrl = 'http://192.168.1.3:8000/ads';
   
   // Get all ads (for dashboard)
   static Future<Map<String, dynamic>> getAllAds() async {

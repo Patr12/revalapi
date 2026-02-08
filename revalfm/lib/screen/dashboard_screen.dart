@@ -594,52 +594,59 @@ class StatisticsTab extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Overview Cards
-          GridView.count(
-            crossAxisCount: 2,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            childAspectRatio: 1.5,
-            crossAxisSpacing: 16,
-            mainAxisSpacing: 16,
-            children: [
-              StatisticsCard(
-                title: 'Total Ads',
-                value: stats['total_ads'].toString(),
-                icon: Icons.ad_units,
-                color: Colors.blue,
-              ),
-              StatisticsCard(
-                title: 'Active Ads',
-                value: stats['active_ads'].toString(),
-                icon: Icons.play_circle_filled,
-                color: Colors.green,
-              ),
-              StatisticsCard(
-                title: 'Impressions',
-                value: stats['total_impressions'].toString(),
-                icon: Icons.remove_red_eye,
-                color: Colors.orange,
-              ),
-              StatisticsCard(
-                title: 'Clicks',
-                value: stats['total_clicks'].toString(),
-                icon: Icons.touch_app,
-                color: Colors.purple,
-              ),
-              StatisticsCard(
-                title: 'CTR',
-                value: '${stats['click_through_rate']?.toStringAsFixed(1)}%',
-                icon: Icons.trending_up,
-                color: Colors.teal,
-              ),
-              StatisticsCard(
-                title: 'Today Clicks',
-                value: stats['today_clicks']?.toString() ?? '0',
-                icon: Icons.today,
-                color: Colors.amber,
-              ),
-            ],
-          ),
+    GridView.builder(
+  shrinkWrap: true,
+  physics: const NeverScrollableScrollPhysics(),
+  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+    crossAxisCount: 2,
+    crossAxisSpacing: 8,
+    mainAxisSpacing: 8,
+    mainAxisExtent: 110, // 👈 hii inazuia overflow
+  ),
+  itemCount: 6,
+  itemBuilder: (context, index) {
+    final cards = [
+      StatisticsCard(
+        title: 'Total Ads',
+        value: stats['total_ads'].toString(),
+        icon: Icons.ad_units,
+        color: Colors.blue,
+      ),
+      StatisticsCard(
+        title: 'Active Ads',
+        value: stats['active_ads'].toString(),
+        icon: Icons.play_circle_filled,
+        color: Colors.green,
+      ),
+      StatisticsCard(
+        title: 'Impressions',
+        value: stats['total_impressions'].toString(),
+        icon: Icons.remove_red_eye,
+        color: Colors.orange,
+      ),
+      StatisticsCard(
+        title: 'Clicks',
+        value: stats['total_clicks'].toString(),
+        icon: Icons.touch_app,
+        color: Colors.purple,
+      ),
+      StatisticsCard(
+        title: 'CTR',
+        value: '${stats['click_through_rate']?.toStringAsFixed(1)}%',
+        icon: Icons.trending_up,
+        color: Colors.teal,
+      ),
+      StatisticsCard(
+        title: 'Today Clicks',
+        value: stats['today_clicks']?.toString() ?? '0',
+        icon: Icons.today,
+        color: Colors.amber,
+      ),
+    ];
+    return cards[index];
+  },
+),
+
           const SizedBox(height: 24),
           
           // Program Stats

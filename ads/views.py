@@ -12,10 +12,13 @@ from django.contrib.auth import logout
 from .serializers import AdvertisementSerializer, RegistrationSerializer, LoginSerializer, AdminProfileSerializer,UserSerializer
 from django.db.models import Q
 import logging
-
+from rest_framework.authentication import TokenAuthentication
 from ads import models
+from django.db.models import Sum
+
 
 logger = logging.getLogger(__name__)
+
 class LoginAPIView(APIView):
     """API ya login"""
     
@@ -124,7 +127,8 @@ class UserProfileAPIView(APIView):
 
 class AdvertisementListCreateAPIView(generics.ListCreateAPIView):
     """API ya kupata na kuunda matangazo (kwa admin)"""
-    
+    authentication_classes = [TokenAuthentication]
+
     permission_classes = [permissions.IsAuthenticated]
     serializer_class = AdvertisementSerializer
     queryset = Advertisement.objects.all()
@@ -144,7 +148,8 @@ class AdvertisementListCreateAPIView(generics.ListCreateAPIView):
 
 class AdvertisementDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
     """API ya kuhudumia matangazo moja moja (kwa admin)"""
-    
+    authentication_classes = [TokenAuthentication]
+
     permission_classes = [permissions.IsAuthenticated]
     serializer_class = AdvertisementSerializer
     queryset = Advertisement.objects.all()
@@ -174,7 +179,8 @@ class AdvertisementDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
 
 class DashboardStatisticsAPIView(APIView):
     """API ya takwimu za dashboard"""
-    
+    authentication_classes = [TokenAuthentication]
+
     permission_classes = [permissions.IsAuthenticated]
     
     def get(self, request):
@@ -192,11 +198,11 @@ class DashboardStatisticsAPIView(APIView):
             today = timezone.now().date()
             today_clicks = Advertisement.objects.filter(
                 updated_at__date=today
-            ).aggregate(models.Sum('clicks'))['clicks__sum'] or 0
+            ).aggregate(Sum('clicks'))['clicks__sum'] or 0
             
             today_impressions = Advertisement.objects.filter(
                 updated_at__date=today
-            ).aggregate(models.Sum('impressions'))['impressions__sum'] or 0
+            ).aggregate(Sum('impressions'))['impressions__sum'] or 0
             
             # Ads by program
             program_stats = []
@@ -235,6 +241,8 @@ class DashboardStatisticsAPIView(APIView):
         
 class ActiveAdvertisementsAPIView(APIView):
     """API ya kupata matangazo yanayofanya kazi kwa wakati huo"""
+    authentication_classes = [TokenAuthentication]
+
     
     def get(self, request):
         try:
@@ -272,6 +280,8 @@ class ActiveAdvertisementsAPIView(APIView):
 
 
 class ProgramAdvertisementsAPIView(APIView):
+    authentication_classes = [TokenAuthentication]
+
     """API ya kupata matangazo kwa kipindi maalum"""
     
     def get(self, request, program_name):
