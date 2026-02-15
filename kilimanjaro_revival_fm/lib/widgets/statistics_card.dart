@@ -21,27 +21,35 @@ class StatisticsCard extends StatelessWidget {
     return Card(
       elevation: 2,
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(12),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, size: 32, color: color),
-            const SizedBox(height: 12),
-            Text(
-              value,
-              style: const TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-              ),
+            Row(
+              children: [
+                Icon(icon, color: color, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: const TextStyle(fontSize: 12, color: Colors.grey),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 8),
             Text(
-              title,
-              style: const TextStyle(
-                fontSize: 14,
-                color: Colors.grey,
+              value,
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: color,
               ),
-              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
           ],
         ),
@@ -49,8 +57,6 @@ class StatisticsCard extends StatelessWidget {
     );
   }
 }
-
-
 
 class AdCard extends StatelessWidget {
   final Advertisement advertisement;
@@ -98,14 +104,14 @@ class AdCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 8),
-            
+
             // Program and dates
             Text(
               '${advertisement.targetProgram} • ${_formatDate(advertisement.startDate)} - ${_formatDate(advertisement.endDate)}',
               style: const TextStyle(color: Colors.grey),
             ),
             const SizedBox(height: 12),
-            
+
             // Description
             Text(
               advertisement.description,
@@ -114,7 +120,7 @@ class AdCard extends StatelessWidget {
               style: const TextStyle(fontSize: 14),
             ),
             const SizedBox(height: 12),
-            
+
             // Stats and actions
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -136,12 +142,13 @@ class AdCard extends StatelessWidget {
                         padding: const EdgeInsets.only(left: 16),
                         child: _buildStatItem(
                           icon: Icons.trending_up,
-                          value: '${(advertisement.clicks / advertisement.impressions * 100).toStringAsFixed(1)}%',
+                          value:
+                              '${(advertisement.clicks / advertisement.impressions * 100).toStringAsFixed(1)}%',
                         ),
                       ),
                   ],
                 ),
-                
+
                 // Actions
                 Row(
                   children: [
@@ -170,10 +177,7 @@ class AdCard extends StatelessWidget {
       children: [
         Icon(icon, size: 16, color: Colors.grey),
         const SizedBox(width: 4),
-        Text(
-          value,
-          style: const TextStyle(fontSize: 12, color: Colors.grey),
-        ),
+        Text(value, style: const TextStyle(fontSize: 12, color: Colors.grey)),
       ],
     );
   }

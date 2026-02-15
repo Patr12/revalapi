@@ -1,5 +1,7 @@
 // lib/services/api_service.dart
 import 'dart:convert';
+import 'dart:io';
+import 'dart:math';
 import 'package:http/http.dart' as http;
 import 'package:kilimanjaro_revival_fm/contants/api_constants.dart';
 import '../core/storage_service.dart';
@@ -9,25 +11,22 @@ class ApiService {
   static final ApiService _instance = ApiService._internal();
   factory ApiService() => _instance;
   ApiService._internal();
-  
+
   // Token for authenticated requests
   String? _token;
-  
+
   // Initialize service
   Future<void> init() async {
     await StorageService.init();
     _token = StorageService.getToken();
   }
-  
+
   // ========== HEADER METHODS ==========
-  
+
   Map<String, String> _getPublicHeaders() {
-    return {
-      'Accept': 'application/json',
-      'Content-Type': 'application/json',
-    };
+    return {'Accept': 'application/json', 'Content-Type': 'application/json'};
   }
-  
+
   Map<String, String> _getAuthHeaders() {
     return {
       'Accept': 'application/json',
@@ -35,20 +34,19 @@ class ApiService {
       'Authorization': 'Token $_token',
     };
   }
-  
+
   // ========== AUTHENTICATION METHODS ==========
-  
+
   Future<Map<String, dynamic>> login(String username, String password) async {
     try {
-      final response = await http.post(
-        Uri.parse('${ApiConstants.apiBaseUrl}${ApiConstants.login}'),
-        headers: _getPublicHeaders(),
-        body: jsonEncode({
-          'username': username,
-          'password': password,
-        }),
-      ).timeout(ApiConstants.defaultTimeout);
-      
+      final response = await http
+          .post(
+            Uri.parse('${ApiConstants.apiBaseUrl}${ApiConstants.login}'),
+            headers: _getPublicHeaders(),
+            body: jsonEncode({'username': username, 'password': password}),
+          )
+          .timeout(ApiConstants.defaultTimeout);
+
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true) {
@@ -56,7 +54,7 @@ class ApiService {
           _token = data['token'];
           await StorageService.saveToken(_token!);
           await StorageService.saveUserData(data['user']);
-          
+
           return {
             'success': true,
             'token': data['token'],
@@ -65,64 +63,56 @@ class ApiService {
           };
         }
       }
-      
-      return {
-        'success': false,
-        'error': 'Invalid credentials or server error',
-      };
+
+      return {'success': false, 'error': 'Invalid credentials or server error'};
     } catch (e) {
-      return {
-        'success': false,
-        'error': 'Network error: $e',
-      };
+      return {'success': false, 'error': 'Network error: $e'};
     }
   }
-  
+
   Future<Map<String, dynamic>> logout() async {
     try {
       if (_token != null) {
-        await http.post(
-          Uri.parse('${ApiConstants.apiBaseUrl}${ApiConstants.logout}'),
-          headers: _getAuthHeaders(),
-        ).timeout(ApiConstants.shortTimeout);
+        await http
+            .post(
+              Uri.parse('${ApiConstants.apiBaseUrl}${ApiConstants.logout}'),
+              headers: _getAuthHeaders(),
+            )
+            .timeout(ApiConstants.shortTimeout);
       }
-      
+
       // Clear local storage
       _token = null;
       await StorageService.clearAll();
-      
-      return {
-        'success': true,
-        'message': 'Logged out successfully',
-      };
+
+      return {'success': true, 'message': 'Logged out successfully'};
     } catch (e) {
       // Even if network fails, clear local storage
       _token = null;
       await StorageService.clearAll();
-      
-      return {
-        'success': true,
-        'message': 'Logged out locally',
-      };
+
+      return {'success': true, 'message': 'Logged out locally'};
     }
   }
-  
+
   Future<Map<String, dynamic>> register(Map<String, dynamic> userData) async {
     try {
-      final response = await http.post(
-        Uri.parse('${ApiConstants.apiBaseUrl}${ApiConstants.register}'),
-        headers: _getPublicHeaders(),
-        body: jsonEncode(userData),
-      ).timeout(ApiConstants.defaultTimeout);
-      
+      final response = await http
+          .post(
+            Uri.parse('${ApiConstants.apiBaseUrl}${ApiConstants.register}'),
+            headers: _getPublicHeaders(),
+            body: jsonEncode(userData),
+          )
+          .timeout(ApiConstants.defaultTimeout);
+
       if (response.statusCode == 201) {
         final data = jsonDecode(response.body);
-        
+
         // Auto-login after registration
         _token = data['token'];
         await StorageService.saveToken(_token!);
         await StorageService.saveUserData(data['user']);
-        
+
         return {
           'success': true,
           'token': data['token'],
@@ -137,20 +127,19 @@ class ApiService {
         };
       }
     } catch (e) {
-      return {
-        'success': false,
-        'error': 'Network error: $e',
-      };
+      return {'success': false, 'error': 'Network error: $e'};
     }
   }
-  
+
   Future<Map<String, dynamic>> getUserProfile() async {
     try {
-      final response = await http.get(
-        Uri.parse('${ApiConstants.apiBaseUrl}${ApiConstants.userProfile}'),
-        headers: _getAuthHeaders(),
-      ).timeout(ApiConstants.defaultTimeout);
-      
+      final response = await http
+          .get(
+            Uri.parse('${ApiConstants.apiBaseUrl}${ApiConstants.userProfile}'),
+            headers: _getAuthHeaders(),
+          )
+          .timeout(ApiConstants.defaultTimeout);
+
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         return {
@@ -165,34 +154,27 @@ class ApiService {
           'needsLogin': true,
         };
       } else {
-        return {
-          'success': false,
-          'error': 'Failed to fetch profile',
-        };
+        return {'success': false, 'error': 'Failed to fetch profile'};
       }
     } catch (e) {
-      return {
-        'success': false,
-        'error': 'Network error: $e',
-      };
+      return {'success': false, 'error': 'Network error: $e'};
     }
   }
-  
+
   // ========== PUBLIC API METHODS (No auth required) ==========
-  
+
   Future<Map<String, dynamic>> fetchActiveAds() async {
     try {
-      final response = await http.get(
-        Uri.parse('${ApiConstants.adsBaseUrl}${ApiConstants.activeAds}'),
-        headers: _getPublicHeaders(),
-      ).timeout(ApiConstants.defaultTimeout);
-      
+      final response = await http
+          .get(
+            Uri.parse('${ApiConstants.adsBaseUrl}${ApiConstants.activeAds}'),
+            headers: _getPublicHeaders(),
+          )
+          .timeout(ApiConstants.defaultTimeout);
+
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        return {
-          'success': true,
-          'data': data,
-        };
+        return {'success': true, 'data': data};
       } else {
         return {
           'success': false,
@@ -208,20 +190,21 @@ class ApiService {
       };
     }
   }
-  
+
   Future<Map<String, dynamic>> fetchProgramAds(String programName) async {
     try {
-      final response = await http.get(
-        Uri.parse('${ApiConstants.adsBaseUrl}${ApiConstants.programAds}$programName/'),
-        headers: _getPublicHeaders(),
-      ).timeout(ApiConstants.defaultTimeout);
-      
+      final response = await http
+          .get(
+            Uri.parse(
+              '${ApiConstants.adsBaseUrl}${ApiConstants.programAds}$programName/',
+            ),
+            headers: _getPublicHeaders(),
+          )
+          .timeout(ApiConstants.defaultTimeout);
+
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        return {
-          'success': true,
-          'data': data,
-        };
+        return {'success': true, 'data': data};
       } else {
         return {
           'success': false,
@@ -237,76 +220,62 @@ class ApiService {
       };
     }
   }
-  
+
   Future<Map<String, dynamic>> trackClick(String adId) async {
     try {
-      final response = await http.post(
-        Uri.parse('${ApiConstants.adsBaseUrl}${ApiConstants.trackClick}$adId/'),
-        headers: _getPublicHeaders(),
-      ).timeout(ApiConstants.shortTimeout);
-      
+      final response = await http
+          .post(
+            Uri.parse(
+              '${ApiConstants.adsBaseUrl}${ApiConstants.trackClick}$adId/',
+            ),
+            headers: _getPublicHeaders(),
+          )
+          .timeout(ApiConstants.shortTimeout);
+
       if (response.statusCode == 200) {
-        return {
-          'success': true,
-          'message': 'Click tracked successfully',
-        };
+        return {'success': true, 'message': 'Click tracked successfully'};
       } else {
-        return {
-          'success': false,
-          'error': 'Failed to track click',
-        };
+        return {'success': false, 'error': 'Failed to track click'};
       }
     } catch (e) {
-      return {
-        'success': false,
-        'error': 'Network Error: $e',
-      };
+      return {'success': false, 'error': 'Network Error: $e'};
     }
   }
-  
+
   Future<Map<String, dynamic>> getAdStatistics() async {
     try {
-      final response = await http.get(
-        Uri.parse('${ApiConstants.adsBaseUrl}${ApiConstants.adStatistics}'),
-        headers: _getPublicHeaders(),
-      ).timeout(ApiConstants.defaultTimeout);
-      
+      final response = await http
+          .get(
+            Uri.parse('${ApiConstants.adsBaseUrl}${ApiConstants.adStatistics}'),
+            headers: _getPublicHeaders(),
+          )
+          .timeout(ApiConstants.defaultTimeout);
+
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        return {
-          'success': true,
-          'data': data,
-        };
+        return {'success': true, 'data': data};
       } else {
-        return {
-          'success': false,
-          'error': 'Failed to fetch statistics',
-        };
+        return {'success': false, 'error': 'Failed to fetch statistics'};
       }
     } catch (e) {
-      return {
-        'success': false,
-        'error': 'Network error: $e',
-      };
+      return {'success': false, 'error': 'Network error: $e'};
     }
   }
-  
+
   // ========== DASHBOARD API METHODS (Auth required) ==========
-  
+
   Future<Map<String, dynamic>> getAllAds() async {
     try {
-      final response = await http.get(
-        Uri.parse('${ApiConstants.apiBaseUrl}${ApiConstants.dashboardAds}'),
-        headers: _getAuthHeaders(),
-      ).timeout(ApiConstants.defaultTimeout);
-      
+      final response = await http
+          .get(
+            Uri.parse('${ApiConstants.apiBaseUrl}${ApiConstants.dashboardAds}'),
+            headers: _getAuthHeaders(),
+          )
+          .timeout(ApiConstants.defaultTimeout);
+
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        return {
-          'success': true,
-          'ads': data['ads'],
-          'count': data['count'],
-        };
+        return {'success': true, 'ads': data['ads'], 'count': data['count']};
       } else if (response.statusCode == 401) {
         return {
           'success': false,
@@ -314,98 +283,230 @@ class ApiService {
           'needsLogin': true,
         };
       } else {
-        return {
-          'success': false,
-          'error': 'Failed to fetch ads',
-        };
+        return {'success': false, 'error': 'Failed to fetch ads'};
       }
     } catch (e) {
-      return {
-        'success': false,
-        'error': 'Network error: $e',
-      };
+      return {'success': false, 'error': 'Network error: $e'};
     }
   }
-  
-  Future<Map<String, dynamic>> createAd(Map<String, dynamic> adData) async {
+
+  Future<Map<String, dynamic>> createAd(
+    Map<String, dynamic> adData, {
+    File? imageFile,
+  }) async {
     try {
-      final response = await http.post(
-        Uri.parse('${ApiConstants.apiBaseUrl}${ApiConstants.dashboardAds}'),
-        headers: _getAuthHeaders(),
-        body: jsonEncode(adData),
-      ).timeout(ApiConstants.defaultTimeout);
-      
-      if (response.statusCode == 201) {
-        final data = jsonDecode(response.body);
-        return {
-          'success': true,
-          'ad': data['ad'],
-          'message': 'Advertisement created successfully',
-        };
-      } else if (response.statusCode == 401) {
-        return {
-          'success': false,
-          'error': 'Unauthorized - Please login again',
-          'needsLogin': true,
-        };
+      final uri = Uri.parse(
+        '${ApiConstants.apiBaseUrl}${ApiConstants.dashboardAds}',
+      );
+
+      // Debug: Log what we're sending
+      print('📤 Creating AD with data: $adData');
+      print('📷 Image file: ${imageFile?.path ?? "NO IMAGE"}');
+
+      if (imageFile != null) {
+        // Use multipart request for file upload
+        final request = http.MultipartRequest('POST', uri);
+        request.headers.addAll({'Authorization': 'Token $_token'});
+
+        // Add all String fields (skip empty/null values)
+        adData.forEach((key, value) {
+          if (value != null && value.toString().isNotEmpty) {
+            request.fields[key] = value.toString();
+            print(
+              '  └─ $key: ${value.toString().substring(0, min(50, value.toString().length))}',
+            );
+          }
+        });
+
+        // Add image file
+        request.files.add(
+          await http.MultipartFile.fromPath('image', imageFile.path),
+        );
+
+        final response = await request.send().timeout(
+          ApiConstants.defaultTimeout,
+        );
+        final responseBody = await response.stream.bytesToString();
+
+        print(
+          '📥 Response (${response.statusCode}): ${responseBody.substring(0, min(200, responseBody.length))}',
+        );
+
+        if (response.statusCode == 201) {
+          final data = jsonDecode(responseBody);
+          return {
+            'success': true,
+            'ad': data['ad'],
+            'message': 'Advertisement created successfully',
+          };
+        } else if (response.statusCode == 400) {
+          try {
+            final errorData = jsonDecode(responseBody);
+            return {
+              'success': false,
+              'error':
+                  errorData['errors']?.toString() ??
+                  'Validation error: $responseBody',
+            };
+          } catch (e) {
+            return {
+              'success': false,
+              'error': 'Validation error: $responseBody',
+            };
+          }
+        } else if (response.statusCode == 401) {
+          return {
+            'success': false,
+            'error': 'Unauthorized - Please login again',
+            'needsLogin': true,
+          };
+        } else {
+          return {
+            'success': false,
+            'error': 'Failed to create ad (HTTP ${response.statusCode})',
+          };
+        }
       } else {
-        final errorData = jsonDecode(response.body);
-        return {
-          'success': false,
-          'error': errorData['errors'] ?? 'Failed to create ad',
-        };
+        // Use regular JSON request if no image
+        final response = await http
+            .post(uri, headers: _getAuthHeaders(), body: jsonEncode(adData))
+            .timeout(ApiConstants.defaultTimeout);
+
+        print(
+          '📥 Response (${response.statusCode}): ${response.body.substring(0, min(200, response.body.length))}',
+        );
+
+        if (response.statusCode == 201) {
+          final data = jsonDecode(response.body);
+          return {
+            'success': true,
+            'ad': data['ad'],
+            'message': 'Advertisement created successfully',
+          };
+        } else if (response.statusCode == 400) {
+          try {
+            final errorData = jsonDecode(response.body);
+            return {
+              'success': false,
+              'error':
+                  errorData['errors']?.toString() ??
+                  'Validation error: ${response.body}',
+            };
+          } catch (e) {
+            return {
+              'success': false,
+              'error': 'Validation error: ${response.body}',
+            };
+          }
+        } else if (response.statusCode == 401) {
+          return {
+            'success': false,
+            'error': 'Unauthorized - Please login again',
+            'needsLogin': true,
+          };
+        } else {
+          return {
+            'success': false,
+            'error': 'Failed to create ad (HTTP ${response.statusCode})',
+          };
+        }
       }
     } catch (e) {
-      return {
-        'success': false,
-        'error': 'Network error: $e',
-      };
+      return {'success': false, 'error': 'Network error: $e'};
     }
   }
-  
-  Future<Map<String, dynamic>> updateAd(int id, Map<String, dynamic> adData) async {
+
+  Future<Map<String, dynamic>> updateAd(
+    int id,
+    Map<String, dynamic> adData, {
+    File? imageFile,
+  }) async {
     try {
-      final response = await http.put(
-        Uri.parse('${ApiConstants.apiBaseUrl}${ApiConstants.dashboardAds}$id/'),
-        headers: _getAuthHeaders(),
-        body: jsonEncode(adData),
-      ).timeout(ApiConstants.defaultTimeout);
-      
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return {
-          'success': true,
-          'ad': data['ad'],
-          'message': 'Advertisement updated successfully',
-        };
-      } else if (response.statusCode == 401) {
-        return {
-          'success': false,
-          'error': 'Unauthorized - Please login again',
-          'needsLogin': true,
-        };
+      final uri = Uri.parse(
+        '${ApiConstants.apiBaseUrl}${ApiConstants.dashboardAds}$id/',
+      );
+
+      if (imageFile != null) {
+        // Use multipart request for file upload
+        final request = http.MultipartRequest('PUT', uri);
+        request.headers.addAll({'Authorization': 'Token $_token'});
+
+        // Add all String fields
+        adData.forEach((key, value) {
+          if (value != null) {
+            request.fields[key] = value.toString();
+          }
+        });
+
+        // Add image file
+        request.files.add(
+          await http.MultipartFile.fromPath('image', imageFile.path),
+        );
+
+        final response = await request.send().timeout(
+          ApiConstants.defaultTimeout,
+        );
+        final responseBody = await response.stream.bytesToString();
+
+        if (response.statusCode == 200) {
+          final data = jsonDecode(responseBody);
+          return {
+            'success': true,
+            'ad': data['ad'],
+            'message': 'Advertisement updated successfully',
+          };
+        } else if (response.statusCode == 401) {
+          return {
+            'success': false,
+            'error': 'Unauthorized - Please login again',
+            'needsLogin': true,
+          };
+        } else {
+          return {'success': false, 'error': 'Failed to update ad'};
+        }
       } else {
-        final errorData = jsonDecode(response.body);
-        return {
-          'success': false,
-          'error': errorData['errors'] ?? 'Failed to update ad',
-        };
+        // Use regular JSON request if no image
+        final response = await http
+            .put(uri, headers: _getAuthHeaders(), body: jsonEncode(adData))
+            .timeout(ApiConstants.defaultTimeout);
+
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body);
+          return {
+            'success': true,
+            'ad': data['ad'],
+            'message': 'Advertisement updated successfully',
+          };
+        } else if (response.statusCode == 401) {
+          return {
+            'success': false,
+            'error': 'Unauthorized - Please login again',
+            'needsLogin': true,
+          };
+        } else {
+          final errorData = jsonDecode(response.body);
+          return {
+            'success': false,
+            'error': errorData['errors'] ?? 'Failed to update ad',
+          };
+        }
       }
     } catch (e) {
-      return {
-        'success': false,
-        'error': 'Network error: $e',
-      };
+      return {'success': false, 'error': 'Network error: $e'};
     }
   }
-  
+
   Future<Map<String, dynamic>> deleteAd(int id) async {
     try {
-      final response = await http.delete(
-        Uri.parse('${ApiConstants.apiBaseUrl}${ApiConstants.dashboardAds}$id/'),
-        headers: _getAuthHeaders(),
-      ).timeout(ApiConstants.defaultTimeout);
-      
+      final response = await http
+          .delete(
+            Uri.parse(
+              '${ApiConstants.apiBaseUrl}${ApiConstants.dashboardAds}$id/',
+            ),
+            headers: _getAuthHeaders(),
+          )
+          .timeout(ApiConstants.defaultTimeout);
+
       if (response.statusCode == 204 || response.statusCode == 200) {
         return {
           'success': true,
@@ -418,26 +519,24 @@ class ApiService {
           'needsLogin': true,
         };
       } else {
-        return {
-          'success': false,
-          'error': 'Failed to delete ad',
-        };
+        return {'success': false, 'error': 'Failed to delete ad'};
       }
     } catch (e) {
-      return {
-        'success': false,
-        'error': 'Network error: $e',
-      };
+      return {'success': false, 'error': 'Network error: $e'};
     }
   }
-  
+
   Future<Map<String, dynamic>> getDashboardStats() async {
     try {
-      final response = await http.get(
-        Uri.parse('${ApiConstants.apiBaseUrl}${ApiConstants.dashboardStats}'),
-        headers: _getAuthHeaders(),
-      ).timeout(ApiConstants.defaultTimeout);
-      
+      final response = await http
+          .get(
+            Uri.parse(
+              '${ApiConstants.apiBaseUrl}${ApiConstants.dashboardStats}',
+            ),
+            headers: _getAuthHeaders(),
+          )
+          .timeout(ApiConstants.defaultTimeout);
+
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         return {
@@ -458,41 +557,40 @@ class ApiService {
         };
       }
     } catch (e) {
-      return {
-        'success': false,
-        'error': 'Network error: $e',
-      };
+      return {'success': false, 'error': 'Network error: $e'};
     }
   }
-  
+
   // ========== HELPER METHODS ==========
-  
+
   bool isLoggedIn() {
     return _token != null && _token!.isNotEmpty;
   }
-  
+
   String? getToken() {
     return _token;
   }
-  
+
   Map<String, dynamic>? getCurrentUser() {
     return StorageService.getUserData();
   }
-  
+
   Future<void> refreshToken() async {
     _token = StorageService.getToken();
   }
-  
+
   // Check token validity by making a simple API call
   Future<bool> checkTokenValidity() async {
     if (!isLoggedIn()) return false;
-    
+
     try {
-      final response = await http.get(
-        Uri.parse('${ApiConstants.apiBaseUrl}${ApiConstants.userProfile}'),
-        headers: _getAuthHeaders(),
-      ).timeout(ApiConstants.shortTimeout);
-      
+      final response = await http
+          .get(
+            Uri.parse('${ApiConstants.apiBaseUrl}${ApiConstants.userProfile}'),
+            headers: _getAuthHeaders(),
+          )
+          .timeout(ApiConstants.shortTimeout);
+
       return response.statusCode == 200;
     } catch (e) {
       return false;

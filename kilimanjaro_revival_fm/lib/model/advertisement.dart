@@ -1,4 +1,6 @@
 // lib/models/advertisement.dart
+import 'dart:math';
+
 class Advertisement {
   final int? id;
   final String title;
@@ -38,22 +40,61 @@ class Advertisement {
     this.impressions = 0,
     this.clicks = 0,
     required this.isActive,
-    required this.createdAt, 
+    required this.createdAt,
     required this.updatedAt,
   });
+
   /// ✅ ADD THIS METHOD
   bool matchesProgram(String programTitle) {
     if (targetProgram.toLowerCase() == 'general') return true;
-    return targetProgram.toLowerCase() ==
-        programTitle.toLowerCase();
+    return targetProgram.toLowerCase() == programTitle.toLowerCase();
   }
 
   factory Advertisement.fromJson(Map<String, dynamic> json) {
+    // Helper function to convert relative paths to absolute URLs
+    String getImageUrl(String? imagePath) {
+      if (imagePath == null || imagePath.isEmpty) return '';
+
+      // Trim whitespace
+      String cleanPath = imagePath.trim();
+      if (cleanPath.isEmpty) return '';
+
+      // If it's already an http(s) URL, return as is
+      if (cleanPath.startsWith('http://') || cleanPath.startsWith('https://')) {
+        print('  ✅ Valid HTTP URL: $cleanPath');
+        return cleanPath;
+      }
+
+      // Base URL WITHOUT trailing slash
+      const baseUrl = 'http://192.168.1.199:8000';
+
+      // Remove file:// protocol if present
+      if (cleanPath.startsWith('file://')) {
+        print('  🔨 Removing file:// from: $cleanPath');
+        cleanPath = cleanPath.replaceFirst('file://', '');
+      }
+
+      // Ensure path starts with /
+      if (!cleanPath.startsWith('/')) {
+        cleanPath = '/$cleanPath';
+      }
+
+      final finalUrl = '$baseUrl$cleanPath';
+      print(
+        '  🔄 Converted: ${imagePath.substring(0, min(40, imagePath.length))}... → $finalUrl',
+      );
+      return finalUrl;
+    }
+
+    // Get image from whichever field is populated
+    final imageField =
+        json['image'] ?? json['image_url'] ?? json['image_display'] ?? '';
+
     return Advertisement(
       id: json['id'],
       title: json['title'] ?? '',
       description: json['description'] ?? '',
-      imageDisplay: json['image_display'] ?? '',
+      imageDisplay: getImageUrl(imageField),
       targetProgram: json['target_program'] ?? 'General',
       startDate: DateTime.parse(json['start_date']),
       endDate: DateTime.parse(json['end_date']),
@@ -138,22 +179,23 @@ class Advertisement {
 // Program choices based on Django model
 class ProgramChoices {
   static const List<String> programs = [
-    'Morning Show',
-    'Mid-Morning Mix',
-    'Habari za Mchana',
-    'Afternoon Gospel',
-    'Drive Time',
-    'Evening Gospel',
-    'Late Night Mix',
-    'General (All Programs)',
+    'SUN RISE',
+    'KR MORNING',
+    'HABARI KWA UFUPI',
+    'JAMVI LETU',
+    'HABARI KAMILI MCHANA',
+    'GOSPEL REVIVAL HUB',
+    'SUN SET DRIVE TIME',
+    'SPORTS COUNTER',
+    'HABARI ZA USIKU',
+    'TUJIFUNZE BIBLIA',
+    'USIKU WA USHINDI',
+    'HABARI ZA USIKU (MARUDIO)',
+    'General',
   ];
 }
 
 // Status choices
 class StatusChoices {
-  static const List<String> statuses = [
-    'active',
-    'inactive',
-    'scheduled',
-  ];
+  static const List<String> statuses = ['active', 'inactive', 'scheduled'];
 }

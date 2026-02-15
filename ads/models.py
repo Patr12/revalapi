@@ -31,7 +31,6 @@ class Advertisement(models.Model):
     title = models.CharField(max_length=200)
     description = models.TextField()
     image = models.ImageField(upload_to='ads_images/', blank=True, null=True)
-    image_url = models.URLField(max_length=500, help_text="URL ya picha ya tangazo")
     
     # Program targeting
     target_program = models.CharField(
@@ -91,7 +90,7 @@ class Advertisement(models.Model):
         verbose_name_plural = "Advertisements"
 
     def clean(self):
-        if not self.image and not self.image_url:
+        if not self.image and not self.image:
             raise ValidationError("Lazima uweke picha (upload) AU link ya picha.")
     
 

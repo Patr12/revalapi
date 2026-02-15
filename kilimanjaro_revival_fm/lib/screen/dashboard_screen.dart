@@ -6,7 +6,6 @@ import '../providers/auth_provider.dart';
 import '../providers/ads_provider.dart';
 import '../widgets/statistics_card.dart';
 
-
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
 
@@ -21,12 +20,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void initState() {
     super.initState();
-    _screens.addAll([
-      const HomeTab(),
-      const AdsTab(),
-      const StatisticsTab(),
-    ]);
-    
+    _screens.addAll([const HomeTab(), const AdsTab(), const StatisticsTab()]);
+
     // Load data when screen initializes
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final adsProvider = Provider.of<AdsProvider>(context, listen: false);
@@ -46,12 +41,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: () {
-              final adsProvider = Provider.of<AdsProvider>(context, listen: false);
+              final adsProvider = Provider.of<AdsProvider>(
+                context,
+                listen: false,
+              );
               adsProvider.loadAds();
               adsProvider.loadStatistics();
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Data refreshed')),
-              );
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(const SnackBar(content: Text('Data refreshed')));
             },
           ),
           PopupMenuButton(
@@ -95,9 +93,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               onPressed: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(
-                    builder: (context) => const AdFormScreen(),
-                  ),
+                  MaterialPageRoute(builder: (context) => const AdFormScreen()),
                 );
               },
               backgroundColor: Colors.blue,
@@ -116,10 +112,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             icon: Icon(Icons.dashboard),
             label: 'Dashboard',
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.ad_units),
-            label: 'Ads',
-          ),
+          BottomNavigationBarItem(icon: Icon(Icons.ad_units), label: 'Ads'),
           BottomNavigationBarItem(
             icon: Icon(Icons.analytics),
             label: 'Analytics',
@@ -147,15 +140,15 @@ class HomeTab extends StatelessWidget {
           // Welcome Card
           _buildWelcomeCard(authProvider),
           const SizedBox(height: 16),
-          
+
           // Statistics Cards
           _buildStatisticsCards(adsProvider),
           const SizedBox(height: 16),
-          
+
           // Quick Actions
-          _buildQuickActions(),
+          _buildQuickActions(context),
           const SizedBox(height: 16),
-          
+
           // Recent Ads
           _buildRecentAds(adsProvider),
         ],
@@ -168,8 +161,8 @@ class HomeTab extends StatelessWidget {
     final username = user?['username'] ?? 'Admin';
     final firstName = user?['first_name'] ?? '';
     final lastName = user?['last_name'] ?? '';
-    final displayName = '$firstName $lastName'.trim().isNotEmpty 
-        ? '$firstName $lastName' 
+    final displayName = '$firstName $lastName'.trim().isNotEmpty
+        ? '$firstName $lastName'
         : username;
 
     return Card(
@@ -181,11 +174,7 @@ class HomeTab extends StatelessWidget {
             const CircleAvatar(
               radius: 30,
               backgroundColor: Colors.blue,
-              child: Icon(
-                Icons.person,
-                size: 30,
-                color: Colors.white,
-              ),
+              child: Icon(Icons.person, size: 30, color: Colors.white),
             ),
             const SizedBox(width: 16),
             Expanded(
@@ -202,17 +191,12 @@ class HomeTab extends StatelessWidget {
                   const SizedBox(height: 4),
                   const Text(
                     'Manage your advertisements and track performance',
-                    style: TextStyle(
-                      color: Colors.grey,
-                    ),
+                    style: TextStyle(color: Colors.grey),
                   ),
                   const SizedBox(height: 8),
                   Text(
                     'Last login: ${DateTime.now().toString().substring(0, 10)}',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey,
-                    ),
+                    style: const TextStyle(fontSize: 12, color: Colors.grey),
                   ),
                 ],
               ),
@@ -246,7 +230,8 @@ class HomeTab extends StatelessWidget {
         ),
         StatisticsCard(
           title: 'Impressions',
-          value: adsProvider.statistics?['total_impressions']?.toString() ?? '0',
+          value:
+              adsProvider.statistics?['total_impressions']?.toString() ?? '0',
           icon: Icons.remove_red_eye,
           color: Colors.orange,
         ),
@@ -260,7 +245,7 @@ class HomeTab extends StatelessWidget {
     );
   }
 
-  Widget _buildQuickActions() {
+  Widget _buildQuickActions(BuildContext context) {
     return Card(
       elevation: 2,
       child: Padding(
@@ -270,10 +255,7 @@ class HomeTab extends StatelessWidget {
           children: [
             const Text(
               'Quick Actions',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
             Wrap(
@@ -284,6 +266,10 @@ class HomeTab extends StatelessWidget {
                   icon: Icons.add,
                   label: 'New Ad',
                   onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const AdFormScreen()),
+                    );
                     // Navigate to ad form
                   },
                 ),
@@ -292,22 +278,31 @@ class HomeTab extends StatelessWidget {
                   label: 'Refresh',
                   onTap: () {
                     // Refresh data
+                    final adsProvider = Provider.of<AdsProvider>(
+                      context,
+                      listen: false,
+                    );
+                    adsProvider.loadAds();
+                    adsProvider.loadStatistics();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Data refreshed')),
+                    );
                   },
                 ),
-                _buildActionButton(
-                  icon: Icons.download,
-                  label: 'Export',
-                  onTap: () {
-                    // Export data
-                  },
-                ),
-                _buildActionButton(
-                  icon: Icons.settings,
-                  label: 'Settings',
-                  onTap: () {
-                    // Open settings
-                  },
-                ),
+                // _buildActionButton(
+                //   icon: Icons.download,
+                //   label: 'Export',
+                //   onTap: () {
+                //     // Export data
+                //   },
+                // ),
+                // _buildActionButton(
+                //   icon: Icons.settings,
+                //   label: 'Settings',
+                //   onTap: () {
+                //     // Open settings
+                //   },
+                // ),
               ],
             ),
           ],
@@ -335,10 +330,7 @@ class HomeTab extends StatelessWidget {
           children: [
             Icon(icon, color: Colors.blue),
             const SizedBox(height: 4),
-            Text(
-              label,
-              style: const TextStyle(fontSize: 12),
-            ),
+            Text(label, style: const TextStyle(fontSize: 12)),
           ],
         ),
       ),
@@ -357,10 +349,7 @@ class HomeTab extends StatelessWidget {
           children: [
             const Text(
               'Recent Ads',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
             if (recentAds.isEmpty)
@@ -374,32 +363,31 @@ class HomeTab extends StatelessWidget {
                 ),
               )
             else
-              ...recentAds.map((ad) => ListTile(
-                    leading: Container(
-                      width: 50,
-                      height: 50,
-                      decoration: BoxDecoration(
-                        color: Colors.grey[200],
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Icon(
-                        Icons.image,
-                        color: Colors.grey[400],
-                      ),
+              ...recentAds.map(
+                (ad) => ListTile(
+                  leading: Container(
+                    width: 50,
+                    height: 50,
+                    decoration: BoxDecoration(
+                      color: Colors.grey[200],
+                      borderRadius: BorderRadius.circular(8),
                     ),
-                    title: Text(ad.title),
-                    subtitle: Text(
-                      'Status: ${ad.status} • ${ad.targetProgram}',
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                    trailing: Chip(
-                      label: Text('${ad.clicks} clicks'),
-                      backgroundColor: Colors.blue[50],
-                    ),
-                    onTap: () {
-                      // Navigate to ad detail
-                    },
-                  )),
+                    child: Icon(Icons.image, color: Colors.grey[400]),
+                  ),
+                  title: Text(ad.title),
+                  subtitle: Text(
+                    'Status: ${ad.status} • ${ad.targetProgram}',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                  trailing: Chip(
+                    label: Text('${ad.clicks} clicks'),
+                    backgroundColor: Colors.blue[50],
+                  ),
+                  onTap: () {
+                    // Navigate to ad detail
+                  },
+                ),
+              ),
           ],
         ),
       ),
@@ -442,10 +430,7 @@ class AdsTab extends StatelessWidget {
               PopupMenuButton(
                 icon: const Icon(Icons.filter_list),
                 itemBuilder: (context) => [
-                  const PopupMenuItem(
-                    value: 'all',
-                    child: Text('All Ads'),
-                  ),
+                  const PopupMenuItem(value: 'all', child: Text('All Ads')),
                   const PopupMenuItem(
                     value: 'active',
                     child: Text('Active Only'),
@@ -466,7 +451,7 @@ class AdsTab extends StatelessWidget {
             ],
           ),
         ),
-        
+
         // Ads List
         Expanded(
           child: RefreshIndicator(
@@ -594,65 +579,65 @@ class StatisticsTab extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Overview Cards
-    GridView.builder(
-  shrinkWrap: true,
-  physics: const NeverScrollableScrollPhysics(),
-  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-    crossAxisCount: 2,
-    crossAxisSpacing: 8,
-    mainAxisSpacing: 8,
-    mainAxisExtent: 110, // 👈 hii inazuia overflow
-  ),
-  itemCount: 6,
-  itemBuilder: (context, index) {
-    final cards = [
-      StatisticsCard(
-        title: 'Total Ads',
-        value: stats['total_ads'].toString(),
-        icon: Icons.ad_units,
-        color: Colors.blue,
-      ),
-      StatisticsCard(
-        title: 'Active Ads',
-        value: stats['active_ads'].toString(),
-        icon: Icons.play_circle_filled,
-        color: Colors.green,
-      ),
-      StatisticsCard(
-        title: 'Impressions',
-        value: stats['total_impressions'].toString(),
-        icon: Icons.remove_red_eye,
-        color: Colors.orange,
-      ),
-      StatisticsCard(
-        title: 'Clicks',
-        value: stats['total_clicks'].toString(),
-        icon: Icons.touch_app,
-        color: Colors.purple,
-      ),
-      StatisticsCard(
-        title: 'CTR',
-        value: '${stats['click_through_rate']?.toStringAsFixed(1)}%',
-        icon: Icons.trending_up,
-        color: Colors.teal,
-      ),
-      StatisticsCard(
-        title: 'Today Clicks',
-        value: stats['today_clicks']?.toString() ?? '0',
-        icon: Icons.today,
-        color: Colors.amber,
-      ),
-    ];
-    return cards[index];
-  },
-),
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              crossAxisSpacing: 8,
+              mainAxisSpacing: 8,
+              mainAxisExtent: 110, // 👈 hii inazuia overflow
+            ),
+            itemCount: 6,
+            itemBuilder: (context, index) {
+              final cards = [
+                StatisticsCard(
+                  title: 'Total Ads',
+                  value: stats['total_ads'].toString(),
+                  icon: Icons.ad_units,
+                  color: Colors.blue,
+                ),
+                StatisticsCard(
+                  title: 'Active Ads',
+                  value: stats['active_ads'].toString(),
+                  icon: Icons.play_circle_filled,
+                  color: Colors.green,
+                ),
+                StatisticsCard(
+                  title: 'Impressions',
+                  value: stats['total_impressions'].toString(),
+                  icon: Icons.remove_red_eye,
+                  color: Colors.orange,
+                ),
+                StatisticsCard(
+                  title: 'Clicks',
+                  value: stats['total_clicks'].toString(),
+                  icon: Icons.touch_app,
+                  color: Colors.purple,
+                ),
+                StatisticsCard(
+                  title: 'CTR',
+                  value: '${stats['click_through_rate']?.toStringAsFixed(1)}%',
+                  icon: Icons.trending_up,
+                  color: Colors.teal,
+                ),
+                StatisticsCard(
+                  title: 'Today Clicks',
+                  value: stats['today_clicks']?.toString() ?? '0',
+                  icon: Icons.today,
+                  color: Colors.amber,
+                ),
+              ];
+              return cards[index];
+            },
+          ),
 
           const SizedBox(height: 24),
-          
+
           // Program Stats
           _buildProgramStats(stats),
           const SizedBox(height: 24),
-          
+
           // Performance Chart
           _buildPerformanceChart(),
         ],
@@ -672,10 +657,7 @@ class StatisticsTab extends StatelessWidget {
           children: [
             const Text(
               'Ads by Program',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
             ...programStats.map((stat) {
@@ -683,9 +665,7 @@ class StatisticsTab extends StatelessWidget {
               final count = stat['count'];
               return ListTile(
                 title: Text(program),
-                trailing: Chip(
-                  label: Text(count.toString()),
-                ),
+                trailing: Chip(label: Text(count.toString())),
               );
             }),
           ],
@@ -704,10 +684,7 @@ class StatisticsTab extends StatelessWidget {
           children: [
             const Text(
               'Performance Overview',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
             Container(

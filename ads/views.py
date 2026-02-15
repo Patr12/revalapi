@@ -123,20 +123,29 @@ class UserProfileAPIView(APIView):
         })
 
 
-# ========== DASHBOARD MANAGEMENT VIEWS ==========
+from rest_framework import generics, permissions
+from rest_framework.authentication import TokenAuthentication
+from rest_framework.response import Response
+from .models import Advertisement
+from .serializers import AdvertisementSerializer
+
 
 class AdvertisementListCreateAPIView(generics.ListCreateAPIView):
     """API ya kupata na kuunda matangazo (kwa admin)"""
     authentication_classes = [TokenAuthentication]
-
     permission_classes = [permissions.IsAuthenticated]
+
     serializer_class = AdvertisementSerializer
     queryset = Advertisement.objects.all()
-    
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context['request'] = self.request   # 🔥 muhimu kwa image_display
+        return context
+
     def perform_create(self, serializer):
-        # Automatically set created_by to current user
         serializer.save(created_by=self.request.user)
-    
+
     def list(self, request, *args, **kwargs):
         response = super().list(request, *args, **kwargs)
         return Response({
@@ -147,20 +156,25 @@ class AdvertisementListCreateAPIView(generics.ListCreateAPIView):
 
 
 class AdvertisementDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
-    """API ya kuhudumia matangazo moja moja (kwa admin)"""
+    """API ya kuhudumia tangazo moja moja (kwa admin)"""
     authentication_classes = [TokenAuthentication]
-
     permission_classes = [permissions.IsAuthenticated]
+
     serializer_class = AdvertisementSerializer
     queryset = Advertisement.objects.all()
-    
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context['request'] = self.request   # 🔥 muhimu pia hapa
+        return context
+
     def retrieve(self, request, *args, **kwargs):
         response = super().retrieve(request, *args, **kwargs)
         return Response({
             'success': True,
             'ad': response.data
         })
-    
+
     def update(self, request, *args, **kwargs):
         response = super().update(request, *args, **kwargs)
         return Response({
@@ -168,14 +182,14 @@ class AdvertisementDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
             'message': 'Advertisement updated successfully',
             'ad': response.data
         })
-    
+
     def destroy(self, request, *args, **kwargs):
         super().destroy(request, *args, **kwargs)
         return Response({
             'success': True,
             'message': 'Advertisement deleted successfully'
         })
-
+ 
 
 class DashboardStatisticsAPIView(APIView):
     """API ya takwimu za dashboard"""

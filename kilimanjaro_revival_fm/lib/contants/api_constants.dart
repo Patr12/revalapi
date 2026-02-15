@@ -1,7 +1,7 @@
 // lib/core/api_constants.dart
 class ApiConstants {
   // Base URLs
-  static const String baseUrl = 'http://192.168.1.3:8000';
+  static const String baseUrl = 'http://192.168.1.199:8000';
   static const String apiBaseUrl = '$baseUrl/ads';
   static const String adsBaseUrl = '$baseUrl/ads';
 

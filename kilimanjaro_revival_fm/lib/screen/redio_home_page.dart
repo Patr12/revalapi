@@ -1442,8 +1442,6 @@ class _RadioHomePageState extends State<RadioHomePage> {
       onTap: () {
         _trackAdClick(ad.id.toString());
         if (ad.externalLink != null && ad.externalLink!.isNotEmpty) {
-          // Open external link if available
-          // You can use url_launcher package here
           print('Opening: ${ad.externalLink}');
         }
       },
@@ -1468,44 +1466,74 @@ class _RadioHomePageState extends State<RadioHomePage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Ad Image
-            ClipRRect(
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(16),
-                topRight: Radius.circular(16),
-              ),
-              child: Image.network(
-                ad.imageDisplay,
-                height: 180,
-                width: double.infinity,
-                fit: BoxFit.cover,
-                loadingBuilder: (context, child, loadingProgress) {
-                  if (loadingProgress == null) return child;
-                  return Container(
-                    height: 180,
-                    color: Colors.grey[800],
-                    child: Center(
-                      child: CircularProgressIndicator(
-                        value: loadingProgress.expectedTotalBytes != null
-                            ? loadingProgress.cumulativeBytesLoaded /
-                                  loadingProgress.expectedTotalBytes!
-                            : null,
+            if (ad.imageDisplay != null && ad.imageDisplay.startsWith('http'))
+              ClipRRect(
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(16),
+                  topRight: Radius.circular(16),
+                ),
+                child: Image.network(
+                  ad.imageDisplay,
+                  height: 180,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                  loadingBuilder: (context, child, loadingProgress) {
+                    if (loadingProgress == null) return child;
+                    return Container(
+                      height: 180,
+                      color: Colors.grey[800],
+                      child: Center(
+                        child: CircularProgressIndicator(
+                          value: loadingProgress.expectedTotalBytes != null
+                              ? loadingProgress.cumulativeBytesLoaded /
+                                    loadingProgress.expectedTotalBytes!
+                              : null,
+                        ),
                       ),
-                    ),
-                  );
-                },
-                errorBuilder: (context, error, stackTrace) {
-                  return Container(
-                    height: 180,
-                    color: Colors.grey[800],
-                    child: const Center(
-                      child: Icon(Icons.photo, color: Colors.white54, size: 50),
-                    ),
-                  );
-                },
+                    );
+                  },
+                  errorBuilder: (context, error, stackTrace) {
+                    print('❌ Ad Image Error: $error');
+                    print('🔗 Converted URL: ${ad.imageDisplay}');
+                    print('📝 Ad Title: ${ad.title}');
+                    return Container(
+                      height: 180,
+                      color: Colors.grey[800],
+                      child: Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(
+                              Icons.broken_image,
+                              color: Colors.white54,
+                              size: 50,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Picha haikupakia',
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(0.7),
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              )
+            else
+              // Placeholder when no image
+              Container(
+                height: 120,
+                color: Colors.deepPurple.shade700,
+                child: const Center(
+                  child: Icon(Icons.photo, color: Colors.white54, size: 50),
+                ),
               ),
-            ),
 
-            // Ad Content
+            // Ad Content (rest remains the same)
             Padding(
               padding: const EdgeInsets.all(16),
               child: Column(
@@ -1546,7 +1574,6 @@ class _RadioHomePageState extends State<RadioHomePage> {
 
                   const SizedBox(height: 8),
 
-                  // Advertiser
                   Text(
                     'Mtangazaji: ${ad.advertiser}',
                     style: TextStyle(
@@ -1558,7 +1585,6 @@ class _RadioHomePageState extends State<RadioHomePage> {
 
                   const SizedBox(height: 12),
 
-                  // Description
                   if (ad.description.isNotEmpty)
                     Text(
                       ad.description,
@@ -1567,7 +1593,6 @@ class _RadioHomePageState extends State<RadioHomePage> {
 
                   const SizedBox(height: 16),
 
-                  // Call to Action and Stats
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -1601,7 +1626,6 @@ class _RadioHomePageState extends State<RadioHomePage> {
                           ),
                         ),
 
-                      // Stats
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [

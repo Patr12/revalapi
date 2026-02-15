@@ -3,6 +3,8 @@ from .models import Advertisement, AdminProfile
 from django.utils import timezone
 from django.contrib.auth.models import User
 from django.contrib.auth import authenticate
+# serializers.py
+from django.conf import settings
 
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
@@ -62,6 +64,8 @@ class RegistrationSerializer(serializers.ModelSerializer):
         )
         return user
     
+
+
 class AdvertisementSerializer(serializers.ModelSerializer):
     is_active = serializers.BooleanField(read_only=True)
     image_display = serializers.SerializerMethodField()
@@ -69,47 +73,30 @@ class AdvertisementSerializer(serializers.ModelSerializer):
     class Meta:
         model = Advertisement
         fields = [
-            'id',
-            'title',
-            'description',
-
-            # picha
-            'image',        # upload
-            'image_url',    # link
-            'image_display',
-
-            'target_program',
-            'start_date',
-            'end_date',
-            'display_duration',
-
-            'advertiser',
-            'advertiser_contact',
-            'advertiser_email',
-
-            'call_to_action',
-            'external_link',
-
-            'status',
-            'impressions',
-            'clicks',
-
-            'is_active',
-            'created_at',
-            'updated_at',
+            'id', 'title', 'description',
+            'image', 'image_display',
+            'target_program', 'start_date', 'end_date', 'display_duration',
+            'advertiser', 'advertiser_contact', 'advertiser_email',
+            'call_to_action', 'external_link',
+            'status', 'impressions', 'clicks',
+            'is_active', 'created_at', 'updated_at',
         ]
         read_only_fields = ['impressions', 'clicks', 'created_at', 'updated_at']
 
     def get_image_display(self, obj):
+        request = self.context.get('request')
         if obj.image:
+            if request:
+                return request.build_absolute_uri(obj.image.url)
             return obj.image.url
-        return obj.image_url
-
+        return None
     def validate(self, data):
-        if data['start_date'] > data['end_date']:
-            raise serializers.ValidationError(
-                "End date must be after start date"
-            )
+        # Remove the validation that requires either image or image_url
+        # Let it be optional
+        if data.get('start_date') and data.get('end_date'):
+            if data['start_date'] > data['end_date']:
+                raise serializers.ValidationError(
+                    "End date must be after start date"
+                )
         return data
-
     
